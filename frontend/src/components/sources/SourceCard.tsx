@@ -29,6 +29,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import type { TFunction } from 'i18next'
 import { cn } from '@/lib/utils'
 import { ContextToggle } from '@/components/common/ContextToggle'
+import { CloudSourceBadge } from '@/components/integrations/CloudSourceBadge'
 import { ContextMode } from '@/app/(dashboard)/notebooks/[id]/page'
 
 interface SourceCardProps {
@@ -277,6 +278,7 @@ function SourceCardImpl({
                 <SourceTypeIcon className="h-3 w-3" />
                 {sourceType === 'link' ? t('sources.addUrl') : sourceType === 'upload' ? t('sources.uploadFile') : t('sources.enterText')}
               </span>
+              <CloudSourceBadge sourceId={source.id} />
 
               {isCompleted && source.insights_count > 0 && (
                 <>

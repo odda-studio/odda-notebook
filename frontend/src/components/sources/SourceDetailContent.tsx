@@ -67,6 +67,7 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { SourceInsightDialog } from '@/components/sources/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/sources/NotebookAssociations'
+import { SourceCloudSyncSection } from '@/components/integrations/SourceCloudSyncSection'
 
 interface SourceDetailContentProps {
   sourceId: string
@@ -746,6 +747,9 @@ function SourceDetailContentInner({
                     </div>
                   )}
                 </div>
+
+                {/* Cloud storage origin + sync controls (only for cloud-imported sources) */}
+                <SourceCloudSyncSection sourceId={sourceId} />
 
                 {/* Metadata */}
                 <div className="border-t border-border pt-5">

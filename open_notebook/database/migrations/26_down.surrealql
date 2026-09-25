@@ -1,0 +1,9 @@
+-- Rollback Migration 26: remove cloud storage sync tables and events
+
+REMOVE EVENT IF EXISTS sync_link_notebook_delete ON TABLE notebook;
+REMOVE EVENT IF EXISTS synced_file_source_delete ON TABLE source;
+REMOVE TABLE IF EXISTS synced_file;
+REMOVE TABLE IF EXISTS sync_link;
+REMOVE TABLE IF EXISTS integration_account;
+REMOVE TABLE IF EXISTS integration_provider;
+DELETE open_notebook:integration_settings;

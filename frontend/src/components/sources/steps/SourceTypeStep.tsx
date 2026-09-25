@@ -1,8 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { ReactNode, useMemo, useState } from "react"
 import { Control, FieldErrors, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-form"
-import { FileIcon, LinkIcon, FileTextIcon } from "lucide-react"
+import { FileIcon, LinkIcon, FileTextIcon, CloudIcon } from "lucide-react"
 import { useTranslation } from "@/lib/hooks/use-translation"
 import { FormSection } from "@/components/ui/form-section"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -12,8 +12,10 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Controller } from "react-hook-form"
 
+export type SourceType = 'link' | 'upload' | 'text' | 'cloud'
+
 interface CreateSourceFormData {
-  type: 'link' | 'upload' | 'text'
+  type: SourceType
   title?: string
   url?: string
   content?: string
@@ -84,6 +86,12 @@ const getSourceTypes = (t: TFunction) => [
     icon: FileTextIcon,
     description: t('sources.processDescription'),
   },
+  {
+    value: 'cloud' as const,
+    label: t('sources.cloudStorage'),
+    icon: CloudIcon,
+    description: t('sources.cloudStorageDesc'),
+  },
 ]
 
 interface SourceTypeStepProps {
@@ -93,11 +101,13 @@ interface SourceTypeStepProps {
   errors: FieldErrors<CreateSourceFormData>
   urlValidationErrors?: { url: string; line: number }[]
   onClearUrlErrors?: () => void
+  /** Content of the "Cloud" tab (the cloud picker, owned by the dialog). */
+  cloudPanel?: ReactNode
 }
 
 const MAX_BATCH_SIZE = 50
 
-export function SourceTypeStep({ control, register, setValue, errors, urlValidationErrors, onClearUrlErrors }: SourceTypeStepProps) {
+export function SourceTypeStep({ control, register, setValue, errors, urlValidationErrors, onClearUrlErrors, cloudPanel }: SourceTypeStepProps) {
   const { t } = useTranslation()
   // Watch the selected type and inputs to detect batch mode
   const selectedType = useWatch({ control, name: 'type' })
@@ -165,10 +175,10 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
           render={({ field }) => (
             <Tabs 
               value={field.value || ''} 
-              onValueChange={(value) => field.onChange(value as 'link' | 'upload' | 'text')}
+              onValueChange={(value) => field.onChange(value as SourceType)}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
                 {getSourceTypes(t).map((type) => {
                   const Icon = type.icon
                   return (
@@ -282,6 +292,8 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
                     </div>
                   )}
                   
+                  {type.value === 'cloud' && cloudPanel}
+
                   {type.value === 'text' && (
                     <div>
                       <Label htmlFor="content" className="mb-2 block">{t('sources.textContentLabel')}</Label>
@@ -314,7 +326,7 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
       </FormSection>
 
       {/* Hide title field in batch mode - titles will be auto-generated */}
-      {!isBatchMode && (
+      {!isBatchMode && selectedType !== 'cloud' && (
         <FormSection
           htmlFor="source-title"
           title={selectedType === 'text' ? `${t('common.title')} *` : `${t('common.title')} (${t('common.optional')})`}

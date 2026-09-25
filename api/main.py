@@ -32,6 +32,7 @@ from api.routers import (
     embedding_rebuild,
     episode_profiles,
     insights,
+    integrations,
     languages,
     models,
     notebooks,
@@ -244,6 +245,10 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        # OAuth redirects from the provider carry no Bearer token; the
+        # callback is protected by its signed `state` parameter instead.
+        "/api/integrations/providers/dropbox/callback",
+        "/api/integrations/providers/google_drive/callback",
     ],
 )
 
@@ -404,6 +409,7 @@ app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+app.include_router(integrations.router, prefix="/api", tags=["integrations"])
 
 
 @app.get("/")

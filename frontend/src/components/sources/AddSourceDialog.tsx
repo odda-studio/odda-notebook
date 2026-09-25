@@ -24,11 +24,22 @@ import { useCreateSource } from '@/lib/hooks/use-sources'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { CreateSourceRequest } from '@/lib/types/api'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useImportLinks } from '@/lib/hooks/use-integrations'
+import {
+  CloudPickerValue,
+  EMPTY_CLOUD_PICKER_VALUE,
+} from '@/components/integrations/CloudPicker'
+import {
+  buildImportRequest,
+  CloudImportPanel,
+  isCloudImportValid,
+} from '@/components/integrations/CloudImportPanel'
+import { emptyLinkFieldValues, LinkFieldValues } from '@/components/integrations/LinkFields'
 
 const MAX_BATCH_SIZE = 50
 
 const createSourceSchema = z.object({
-  type: z.enum(['link', 'upload', 'text']),
+  type: z.enum(['link', 'upload', 'text', 'cloud']),
   title: z.string().optional(),
   url: z.string().optional(),
   content: z.string().optional(),
@@ -50,6 +61,7 @@ const createSourceSchema = z.object({
     }
     return !!data.file
   }
+  // 'cloud': the picker selection lives outside the form (validated per step)
   return true
 }, {
   message: 'Please provide the required content for the selected source type',
@@ -111,11 +123,17 @@ export function AddSourceDialog({
   const [urlValidationErrors, setUrlValidationErrors] = useState<{ url: string; line: number }[]>([])
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null)
 
+  // Cloud (Dropbox / Google Drive) import state: notebooks and transformations
+  // come from the shared wizard steps, the rest from the picker panel.
+  const [cloudSelection, setCloudSelection] = useState<CloudPickerValue>(EMPTY_CLOUD_PICKER_VALUE)
+  const [cloudOptions, setCloudOptions] = useState<LinkFieldValues>(() => emptyLinkFieldValues())
+
   // Cleanup timeouts to prevent memory leaks
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // API hooks
   const createSource = useCreateSource()
+  const importLinks = useImportLinks()
   const { data: notebooks = [], isLoading: notebooksLoading } = useNotebooks()
   const { data: transformations = [], isLoading: transformationsLoading } = useTransformations()
   const { data: settings } = useSettings()
@@ -233,6 +251,9 @@ export function AddSourceDialog({
           }
           return !!watchedFile
         }
+        if (selectedType === 'cloud') {
+          return isCloudImportValid(cloudSelection, cloudOptions)
+        }
         return true
       case 2:
       case 3:
@@ -298,6 +319,8 @@ export function AddSourceDialog({
 
   // Single source submission
   const submitSingleSource = async (data: CreateSourceFormData): Promise<void> => {
+    // Cloud imports go through submitCloudImport
+    if (data.type === 'cloud') return
     const createRequest: CreateSourceRequest = {
       type: data.type,
       notebooks: selectedNotebooks,
@@ -382,12 +405,23 @@ export function AddSourceDialog({
     return results
   }
 
+  // Cloud submission: links are imported (and synced) by the backend
+  const submitCloudImport = async (): Promise<void> => {
+    await importLinks.mutateAsync(
+      buildImportRequest(cloudSelection, cloudOptions, selectedNotebooks, selectedTransformations)
+    )
+  }
+
   // Form submission
   const onSubmit = async (data: CreateSourceFormData) => {
     try {
       setProcessing(true)
 
-      if (isBatchMode) {
+      if (data.type === 'cloud') {
+        setProcessingStatus({ message: t('sources.importingFromCloud') })
+        await submitCloudImport()
+        handleClose()
+      } else if (isBatchMode) {
         // Batch submission
         setProcessingStatus({ message: t('sources.processingFiles') })
         const results = await submitBatch(data)
@@ -436,6 +470,8 @@ export function AddSourceDialog({
     setSelectedNotebooks(defaultNotebookId ? [defaultNotebookId] : [])
     setUrlValidationErrors([])
     setBatchProgress(null)
+    setCloudSelection(EMPTY_CLOUD_PICKER_VALUE)
+    setCloudOptions(emptyLinkFieldValues())
 
     // Reset to default transformations
     if (transformations.length > 0) {
@@ -559,6 +595,17 @@ export function AddSourceDialog({
                 errors={errors}
                 urlValidationErrors={urlValidationErrors}
                 onClearUrlErrors={handleClearUrlErrors}
+                cloudPanel={
+                  <CloudImportPanel
+                    selection={cloudSelection}
+                    onSelectionChange={setCloudSelection}
+                    options={cloudOptions}
+                    onOptionsChange={setCloudOptions}
+                    idPrefix="add-source-cloud"
+                    showNotebooks={false}
+                    showTransformations={false}
+                  />
+                }
               />
             )}
             
@@ -580,6 +627,7 @@ export function AddSourceDialog({
                 onToggleTransformation={handleTransformationToggle}
                 loading={transformationsLoading}
                 settings={settings}
+                showEmbeddingOptions={selectedType !== 'cloud'}
               />
             )}
           </WizardContainer>
@@ -620,10 +668,10 @@ export function AddSourceDialog({
               {/* Show Done button on all steps, styled as primary */}
               <Button
                 type="submit"
-                disabled={!currentStepValid || createSource.isPending}
+                disabled={!currentStepValid || createSource.isPending || importLinks.isPending}
                 className="min-w-[120px]"
               >
-                {createSource.isPending ? t('common.adding') : t('common.done')}
+                {createSource.isPending || importLinks.isPending ? t('common.adding') : t('common.done')}
               </Button>
             </div>
           </div>

@@ -38,6 +38,10 @@ Sources are the raw materials of your research. This guide covers how to add dif
 5. Done! Immediately available
 ```
 
+### Option 4: Import from Dropbox or Google Drive
+
+**Add Source → Cloud**: pick files and/or folders from a connected account, and choose whether to keep them in sync (new files imported, modified files update their source, deleted files remove it). See [Cloud Storage Sync](cloud-sync.md).
+
 ---
 
 ## Supported File Types

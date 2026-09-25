@@ -132,6 +132,20 @@ The `CCORE_FIRECRAWL_*` variables are passed straight through to the content-cor
 
 ---
 
+## Cloud Storage Sync (Dropbox / Google Drive)
+
+All optional: these can also be set from **Settings → Integrations**. When set here they take precedence and are shown read-only in the UI. See [Cloud Storage Sync](../3-USER-GUIDE/cloud-sync.md).
+
+| Variable | Required? | Default | Description |
+|----------|-----------|---------|-------------|
+| `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` | No | None | Dropbox OAuth app credentials (`_FILE` supported for the secret) |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | No | None | Google OAuth client credentials (`_FILE` supported for the secret) |
+| `OPEN_NOTEBOOK_PUBLIC_URL` | No | None | Browser-facing URL of the frontend, used to build OAuth redirect URIs |
+| `OPEN_NOTEBOOK_ENABLE_SYNC_SCHEDULER` | No | `true` | `false` stops automatic folder syncs (manual sync still works) |
+| `OPEN_NOTEBOOK_SYNC_SCHEDULER_TICK_SECONDS` | No | `60` | How often the scheduler checks for folders due to sync (min 5) |
+
+---
+
 ## Network / Proxy
 
 | Variable | Required? | Default | Description |

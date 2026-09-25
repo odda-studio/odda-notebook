@@ -822,3 +822,218 @@ class NotebookDeleteResponse(BaseModel):
     deleted_chat_sessions: int = Field(
         ..., description="Number of chat sessions deleted"
     )
+
+
+# Cloud-storage integration models (Dropbox / Google Drive sync)
+IntegrationProviderName = Literal["dropbox", "google_drive"]
+
+
+class IntegrationProviderResponse(BaseModel):
+    provider: IntegrationProviderName
+    display_name: str
+    configured: bool = Field(..., description="Client id and secret are available")
+    config_source: Optional[Literal["env", "db"]] = Field(
+        None, description="'env' means managed by environment variables (read-only)"
+    )
+    client_id: Optional[str] = None
+    has_secret: bool = False
+    redirect_uri: Optional[str] = Field(
+        None, description="OAuth redirect URI to register in the provider console"
+    )
+    console_url: str
+
+
+class IntegrationProviderUpdate(BaseModel):
+    client_id: str = Field(..., min_length=1)
+    client_secret: Optional[str] = Field(
+        None, description="Omit or null to keep the stored secret"
+    )
+
+
+class GoogleExportFormats(BaseModel):
+    document: Literal["docx", "pdf", "md", "txt"] = "docx"
+    spreadsheet: Literal["xlsx", "csv", "pdf"] = "xlsx"
+    presentation: Literal["pptx", "pdf"] = "pptx"
+
+
+class IntegrationSettingsResponse(BaseModel):
+    public_url: Optional[str] = None
+    public_url_source: Optional[Literal["env", "db"]] = None
+    scheduler_enabled: bool
+    scheduler_forced_off: bool
+    default_interval_minutes: int
+    max_file_mb: int
+    allowed_extensions: List[str]
+    google_export_formats: GoogleExportFormats
+
+
+class IntegrationSettingsUpdate(BaseModel):
+    public_url: Optional[str] = None
+    scheduler_enabled: Optional[bool] = None
+    default_interval_minutes: Optional[int] = Field(None, ge=5, le=10080)
+    max_file_mb: Optional[int] = Field(None, ge=1, le=1024)
+    allowed_extensions: Optional[List[str]] = Field(None, max_length=200)
+    google_export_formats: Optional[GoogleExportFormats] = None
+
+    @field_validator("allowed_extensions")
+    @classmethod
+    def normalize_extensions(cls, value):
+        if value is None:
+            return value
+        normalized = []
+        for ext in value:
+            ext = ext.strip().lower().lstrip(".")
+            if ext and ext not in normalized:
+                if not ext.isalnum() or len(ext) > 10:
+                    raise ValueError(f"Invalid file extension: {ext}")
+                normalized.append(ext)
+        return normalized
+
+
+class AuthorizeUrlResponse(BaseModel):
+    authorize_url: str
+
+
+class IntegrationAccountResponse(BaseModel):
+    id: str
+    provider: IntegrationProviderName
+    name: str
+    account_email: Optional[str] = None
+    sync_folder_count: int = 0
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+LinkKind = Literal["folder", "file"]
+SyncedFileStatusName = Literal["synced", "unsupported", "error", "ignored", "excluded"]
+SyncLinkStatusName = Literal["idle", "queued", "running", "error"]
+
+
+class RemoteItemResponse(BaseModel):
+    id: str
+    name: str
+    path: str
+    kind: LinkKind
+    size: Optional[int] = None
+    modified_at: Optional[str] = None
+    mime_type: Optional[str] = None
+    extension: Optional[str] = None
+    eligible: bool = True
+    web_url: Optional[str] = None
+    selectable: bool = Field(
+        True, description="False for virtual groupings such as 'Shared with me'"
+    )
+
+
+class BrowseResponse(BaseModel):
+    parent_id: str
+    path: str
+    selectable: bool = Field(True, description="Whether the current folder can be linked")
+    items: List[RemoteItemResponse]
+
+
+class LinkImportItem(BaseModel):
+    kind: LinkKind
+    remote_id: str = Field(..., max_length=1000)
+    remote_path: str = Field(..., max_length=2000)
+    name: str = Field(..., max_length=500)
+
+
+class LinkImportRequest(BaseModel):
+    account_id: str
+    items: List[LinkImportItem] = Field(..., min_length=1, max_length=100)
+    notebook_ids: List[str] = Field(default_factory=list, max_length=100)
+    sync_enabled: bool = True
+    recursive: bool = True
+    interval_minutes: Optional[int] = Field(None, ge=5, le=10080)
+    transformations: List[str] = Field(default_factory=list, max_length=50)
+
+
+class SyncLinkUpdate(BaseModel):
+    notebook_ids: Optional[List[str]] = Field(None, max_length=100)
+    recursive: Optional[bool] = None
+    interval_minutes: Optional[int] = Field(None, ge=5, le=10080)
+    transformations: Optional[List[str]] = Field(None, max_length=50)
+    sync_enabled: Optional[bool] = None
+
+
+class SyncLinkResponse(BaseModel):
+    id: str
+    account_id: str
+    provider: IntegrationProviderName
+    account_name: str
+    kind: LinkKind
+    remote_id: str
+    remote_path: str
+    name: str
+    web_url: Optional[str] = None
+    notebook_ids: List[str]
+    notebook_names: List[str]
+    recursive: bool
+    interval_minutes: int
+    transformations: List[str]
+    sync_enabled: bool
+    status: SyncLinkStatusName
+    last_sync_at: Optional[str] = None
+    next_sync_at: Optional[str] = None
+    last_error: Optional[str] = None
+    file_count: int = 0
+
+
+class LinkImportResponse(BaseModel):
+    links: List[SyncLinkResponse]
+    reused_sources: int = 0
+
+
+class SyncTriggerResponse(BaseModel):
+    command_id: str
+
+
+class SyncedFileResponse(BaseModel):
+    id: str
+    link_id: str
+    remote_id: str
+    name: str
+    path: Optional[str] = None
+    source_id: Optional[str] = None
+    status: SyncedFileStatusName
+    sync_enabled: bool
+    last_error: Optional[str] = None
+    remote_modified_at: Optional[str] = None
+    updated: Optional[str] = None
+    web_url: Optional[str] = None
+
+
+class SyncedFileUpdate(BaseModel):
+    sync_enabled: bool
+
+
+class SyncedFileExcludeRequest(BaseModel):
+    delete_source: bool = False
+
+
+class SourceSyncUpdate(BaseModel):
+    sync_enabled: bool
+
+
+class SourceCloudInfoResponse(BaseModel):
+    source_id: str
+    provider: IntegrationProviderName
+    account_name: str
+    link_id: str
+    link_kind: LinkKind
+    link_name: str
+    synced_file_id: str
+    sync_enabled: bool = Field(..., description="Effective: link and file sync both on")
+    link_sync_enabled: bool
+    file_sync_enabled: bool
+    file_status: SyncedFileStatusName
+    link_status: SyncLinkStatusName
+    last_sync_at: Optional[str] = None
+    last_error: Optional[str] = None
+    remote_path: Optional[str] = None
+    web_url: Optional[str] = None
+
+
+class IntegrationMessageResponse(BaseModel):
+    message: str

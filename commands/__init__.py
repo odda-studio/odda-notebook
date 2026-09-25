@@ -14,6 +14,7 @@ from .embedding_commands import (
     embed_source_command,
     rebuild_embeddings_command,
 )
+from .integration_commands import sync_link_command
 from .podcast_commands import generate_podcast_command
 from .source_commands import process_source_command
 
@@ -26,4 +27,5 @@ __all__ = [
     # Other commands
     "generate_podcast_command",
     "process_source_command",
+    "sync_link_command",
 ]

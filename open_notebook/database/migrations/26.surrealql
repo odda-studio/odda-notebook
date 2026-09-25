@@ -1,0 +1,90 @@
+-- Migration 26: cloud storage sync (Dropbox / Google Drive)
+-- OAuth app credentials per provider, connected accounts, linked remote
+-- files/folders and the per-file sync state. See ADR-009.
+
+-- OAuth app credentials configured from the UI (env vars take precedence).
+DEFINE TABLE IF NOT EXISTS integration_provider SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS provider ON integration_provider TYPE string;
+DEFINE FIELD IF NOT EXISTS client_id ON integration_provider TYPE string;
+DEFINE FIELD IF NOT EXISTS client_secret ON integration_provider TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON integration_provider TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON integration_provider TYPE option<datetime> DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS idx_integration_provider_provider ON TABLE integration_provider COLUMNS provider UNIQUE;
+
+-- Connected accounts. Tokens are encrypted at rest.
+DEFINE TABLE IF NOT EXISTS integration_account SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS provider ON integration_account TYPE string;
+DEFINE FIELD IF NOT EXISTS name ON integration_account TYPE string;
+DEFINE FIELD IF NOT EXISTS account_email ON integration_account TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS external_account_id ON integration_account TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS access_token ON integration_account TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS refresh_token ON integration_account TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS token_expires_at ON integration_account TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS scopes ON integration_account TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON integration_account TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON integration_account TYPE option<datetime> DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS idx_integration_account_provider ON TABLE integration_account COLUMNS provider;
+
+-- A linked remote item (a folder or a single file) imported into 0..N
+-- notebooks (none = general sources), with automatic sync on or off.
+DEFINE TABLE IF NOT EXISTS sync_link SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS account ON sync_link TYPE record<integration_account>;
+DEFINE FIELD IF NOT EXISTS kind ON sync_link TYPE string DEFAULT 'folder' ASSERT $value IN ['folder', 'file'];
+DEFINE FIELD IF NOT EXISTS remote_id ON sync_link TYPE string;
+DEFINE FIELD IF NOT EXISTS remote_path ON sync_link TYPE string;
+DEFINE FIELD IF NOT EXISTS name ON sync_link TYPE string;
+DEFINE FIELD IF NOT EXISTS web_url ON sync_link TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS notebooks ON sync_link TYPE array<record<notebook>> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS recursive ON sync_link TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS interval_minutes ON sync_link TYPE int DEFAULT 15;
+DEFINE FIELD IF NOT EXISTS transformations ON sync_link TYPE array<record<transformation>> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS sync_enabled ON sync_link TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS status ON sync_link TYPE string DEFAULT 'idle';
+DEFINE FIELD IF NOT EXISTS last_sync_at ON sync_link TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS next_sync_at ON sync_link TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS status_changed_at ON sync_link TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS last_error ON sync_link TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS command ON sync_link TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS created ON sync_link TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON sync_link TYPE option<datetime> DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS idx_sync_link_account ON TABLE sync_link COLUMNS account;
+DEFINE INDEX IF NOT EXISTS idx_sync_link_remote ON TABLE sync_link COLUMNS account, remote_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_sync_link_next_sync ON TABLE sync_link COLUMNS next_sync_at;
+
+-- Per-file sync state: which remote file produced which source, at which
+-- revision, and whether this single file is kept in sync.
+DEFINE TABLE IF NOT EXISTS synced_file SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS link ON synced_file TYPE record<sync_link>;
+DEFINE FIELD IF NOT EXISTS remote_id ON synced_file TYPE string;
+DEFINE FIELD IF NOT EXISTS source ON synced_file TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS name ON synced_file TYPE string;
+DEFINE FIELD IF NOT EXISTS remote_path ON synced_file TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS web_url ON synced_file TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS remote_revision ON synced_file TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS content_hash ON synced_file TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS remote_modified_at ON synced_file TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS sync_enabled ON synced_file TYPE bool DEFAULT true;
+DEFINE FIELD IF NOT EXISTS status ON synced_file TYPE string DEFAULT 'synced';
+DEFINE FIELD IF NOT EXISTS last_error ON synced_file TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON synced_file TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON synced_file TYPE option<datetime> DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS idx_synced_file_remote ON TABLE synced_file COLUMNS link, remote_id UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_synced_file_source ON TABLE synced_file COLUMNS source;
+
+-- A source deleted by the user stays deleted: the mapping is kept as
+-- 'ignored' so the next sync does not re-import it (until it changes remotely).
+DEFINE EVENT IF NOT EXISTS synced_file_source_delete ON TABLE source WHEN ($after == NONE) THEN {
+    UPDATE synced_file SET source = NONE, status = IF status == 'excluded' THEN 'excluded' ELSE 'ignored' END WHERE source == $before.id;
+};
+
+-- Cascades. Imported sources are user data and are never removed here.
+DEFINE EVENT IF NOT EXISTS sync_link_delete ON TABLE sync_link WHEN ($after == NONE) THEN {
+    DELETE synced_file WHERE link == $before.id;
+};
+DEFINE EVENT IF NOT EXISTS integration_account_delete ON TABLE integration_account WHEN ($after == NONE) THEN {
+    DELETE sync_link WHERE account == $before.id;
+};
+-- A deleted notebook is dropped from the links that import into it.
+DEFINE EVENT IF NOT EXISTS sync_link_notebook_delete ON TABLE notebook WHEN ($after == NONE) THEN {
+    UPDATE sync_link SET notebooks = array::complement(notebooks, [$before.id]) WHERE notebooks CONTAINS $before.id;
+};

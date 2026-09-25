@@ -17,6 +17,7 @@ import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceDialog'
 import { SourceCard } from '@/components/sources/SourceCard'
 import { useDeleteSource, useRetrySource, useRemoveSourceFromNotebook } from '@/lib/hooks/use-sources'
+import { useRefreshSourcesAfterSync } from '@/lib/hooks/use-integrations'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { ContextMode } from '../[id]/page'
@@ -65,6 +66,8 @@ export function SourcesColumn({
   const deleteSource = useDeleteSource()
   const retrySource = useRetrySource()
   const removeFromNotebook = useRemoveSourceFromNotebook()
+  // Cloud imports create sources asynchronously: refresh once a sync finishes
+  useRefreshSourcesAfterSync(onRefresh)
 
   // Collapsible column state
   const { sourcesCollapsed, toggleSources } = useNotebookColumnsStore()

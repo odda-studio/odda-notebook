@@ -9,7 +9,7 @@ import { Transformation } from "@/lib/types/transformations"
 import { SettingsResponse } from "@/lib/types/api"
 
 interface CreateSourceFormData {
-  type: 'link' | 'upload' | 'text'
+  type: 'link' | 'upload' | 'text' | 'cloud'
   title?: string
   url?: string
   content?: string
@@ -27,6 +27,8 @@ interface ProcessingStepProps {
   onToggleTransformation: (transformationId: string) => void
   loading?: boolean
   settings?: SettingsResponse
+  /** Cloud imports don't take a per-request embedding choice. */
+  showEmbeddingOptions?: boolean
 }
 
 export function ProcessingStep({
@@ -35,7 +37,8 @@ export function ProcessingStep({
   selectedTransformations,
   onToggleTransformation,
   loading = false,
-  settings
+  settings,
+  showEmbeddingOptions = true
 }: ProcessingStepProps) {
   const { t } = useTranslation()
   const transformationItems = transformations.map((transformation) => ({
@@ -59,6 +62,7 @@ export function ProcessingStep({
         />
       </FormSection>
 
+      {showEmbeddingOptions && (
       <FormSection
         title={t('navigation.settings')}
         description={t('sources.processDescription')}
@@ -121,6 +125,7 @@ export function ProcessingStep({
           )}
         </div>
       </FormSection>
+      )}
     </div>
   )
 }

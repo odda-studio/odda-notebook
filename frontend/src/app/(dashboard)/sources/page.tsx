@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
+import { CloudSourceBadge } from '@/components/integrations/CloudSourceBadge'
+import { useRefreshSourcesAfterSync } from '@/lib/hooks/use-integrations'
 
 export default function SourcesPage() {
   const { t, language } = useTranslation()
@@ -85,6 +87,10 @@ export default function SourcesPage() {
       loadingMoreRef.current = false
     }
   }, [sortBy, sortOrder, failedToLoadMessage])
+
+  // Reload the list once a cloud sync finishes (imported files become sources asynchronously)
+  const reloadSources = useCallback(() => fetchSources(true), [fetchSources])
+  useRefreshSourcesAfterSync(reloadSources)
 
   // Initial load and when sort changes
   useEffect(() => {
@@ -390,8 +396,11 @@ export default function SourcesPage() {
                   </td>
                   <td className="h-12 px-4">
                     <div className="flex flex-col overflow-hidden">
-                      <span className="font-medium truncate">
-                        {source.title || t('sources.untitledSource')}
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium truncate">
+                          {source.title || t('sources.untitledSource')}
+                        </span>
+                        <CloudSourceBadge sourceId={source.id} className="shrink-0" />
                       </span>
                       {source.asset?.url && (
                         <span className="text-xs text-muted-foreground truncate">
