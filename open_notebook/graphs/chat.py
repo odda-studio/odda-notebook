@@ -25,6 +25,8 @@ class ThreadState(TypedDict):
     context: Optional[str]
     context_config: Optional[dict]
     model_override: Optional[str]
+    # True when `context` holds retrieved passages rather than chosen sources
+    retrieval: Optional[bool]
 
 
 def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:

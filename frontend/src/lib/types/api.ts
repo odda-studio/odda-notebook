@@ -38,6 +38,21 @@ export interface SourceListResponse {
   processing_info?: Record<string, unknown>
 }
 
+export interface SourceCountResponse {
+  count: number
+}
+
+export interface SourceBulkDeleteRequest {
+  ids?: string[]
+  all?: boolean
+}
+
+export interface SourceBulkDeleteResponse {
+  deleted: number
+  failed: number
+  errors: string[]
+}
+
 export interface SourceDetailResponse extends SourceListResponse {
   full_text: string
   notebooks?: string[]  // List of notebook IDs this source is linked to
@@ -222,6 +237,16 @@ export interface UpdateNotebookChatSessionRequest {
   model_override?: string | null
 }
 
+export interface NotebookChatRetrieval {
+  /** Answer from the passages most similar to the question (vector search). */
+  enabled: boolean
+  /** Context level of each source the search may use (switched-off ones are
+   * omitted): 'insights' searches only its insights, 'full' its text too. */
+  source_modes: Record<string, 'insights' | 'full'>
+  note_ids: string[]
+  max_passages?: number
+}
+
 export interface SendNotebookChatMessageRequest {
   session_id: string
   message: string
@@ -230,6 +255,7 @@ export interface SendNotebookChatMessageRequest {
     notes: Array<Record<string, unknown>>
   }
   model_override?: string
+  retrieval?: NotebookChatRetrieval
 }
 
 export interface BuildContextRequest {

@@ -110,6 +110,9 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
       loadingSessions={chat.loadingSessions}
       notebookContextStats={contextStats}
       notebookId={notebookId}
+      retrievalMode={chat.retrievalMode}
+      onRetrievalModeChange={chat.setRetrievalMode}
+      retrievedPassages={chat.retrievedPassages}
     />
   )
 }

@@ -1,13 +1,16 @@
 import type { AxiosResponse } from 'axios'
 
 import apiClient from './client'
-import { 
-  SourceListResponse, 
-  SourceDetailResponse, 
+import {
+  SourceListResponse,
+  SourceDetailResponse,
   SourceResponse,
   SourceStatusResponse,
-  CreateSourceRequest, 
-  UpdateSourceRequest 
+  SourceCountResponse,
+  SourceBulkDeleteRequest,
+  SourceBulkDeleteResponse,
+  CreateSourceRequest,
+  UpdateSourceRequest
 } from '@/lib/types/api'
 
 export type SourceSortField = 'type' | 'title' | 'created' | 'updated' | 'insights_count' | 'embedded'
@@ -75,6 +78,19 @@ export const sourcesApi = {
 
   delete: async (id: string) => {
     await apiClient.delete(`/sources/${id}`)
+  },
+
+  count: async () => {
+    const response = await apiClient.get<SourceCountResponse>('/sources/count')
+    return response.data
+  },
+
+  bulkDelete: async (params: SourceBulkDeleteRequest) => {
+    const response = await apiClient.post<SourceBulkDeleteResponse>(
+      '/sources/bulk-delete',
+      params
+    )
+    return response.data
   },
 
   status: async (id: string) => {

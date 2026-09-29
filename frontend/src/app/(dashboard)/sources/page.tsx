@@ -8,9 +8,10 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { FileText, Trash2, ArrowDown, ArrowUp, ArrowUpDown, Plus } from 'lucide-react'
+import { FileText, Trash2, ArrowDown, ArrowUp, ArrowUpDown, Plus, CheckSquare, X } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { cn } from '@/lib/utils'
@@ -35,6 +36,18 @@ export default function SourcesPage() {
     open: false,
     source: null
   })
+  // Bulk delete: a "select" mode toggle that reveals checkboxes, plus a
+  // separate always-available "delete all" action for clearing the library.
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<{ open: boolean; mode: 'selected' | 'all' | null }>({
+    open: false,
+    mode: null
+  })
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  // Fetched lazily when the "delete all" dialog opens, so the confirmation
+  // shows a real count instead of only the sources paged in so far.
+  const [totalSourceCount, setTotalSourceCount] = useState<number | null>(null)
   const router = useRouter()
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -288,6 +301,79 @@ export default function SourcesPage() {
     }
   }
 
+  const enterSelectionMode = useCallback(() => {
+    setSelectionMode(true)
+    setSelectedIds(new Set())
+  }, [])
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+  }, [])
+
+  const toggleSourceSelected = useCallback((sourceId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(sourceId)) {
+        next.delete(sourceId)
+      } else {
+        next.add(sourceId)
+      }
+      return next
+    })
+  }, [])
+
+  // "Select all" only covers rows paged in so far (infinite scroll) - "delete
+  // all sources" below is the way to act on the whole library regardless of
+  // how much has loaded.
+  const allLoadedSelected = sources.length > 0 && sources.every(s => selectedIds.has(s.id))
+  const someLoadedSelected = sources.some(s => selectedIds.has(s.id))
+
+  const toggleSelectAllLoaded = useCallback(() => {
+    setSelectedIds(allLoadedSelected ? new Set() : new Set(sources.map(s => s.id)))
+  }, [sources, allLoadedSelected])
+
+  const openDeleteSelectedDialog = useCallback(() => {
+    setBulkDeleteDialog({ open: true, mode: 'selected' })
+  }, [])
+
+  const openDeleteAllDialog = useCallback(() => {
+    setBulkDeleteDialog({ open: true, mode: 'all' })
+    setTotalSourceCount(null)
+    sourcesApi.count()
+      .then(({ count }) => setTotalSourceCount(count))
+      .catch(() => setTotalSourceCount(null)) // dialog falls back to generic wording
+  }, [])
+
+  const handleBulkDeleteConfirm = async () => {
+    if (!bulkDeleteDialog.mode) return
+
+    setBulkDeleting(true)
+    try {
+      const result = bulkDeleteDialog.mode === 'all'
+        ? await sourcesApi.bulkDelete({ all: true })
+        : await sourcesApi.bulkDelete({ ids: Array.from(selectedIds) })
+
+      if (result.failed > 0) {
+        toast.warning(t('sources.bulkDeletePartial', { deleted: result.deleted, failed: result.failed }))
+      } else {
+        toast.success(t('sources.bulkDeleteSuccess', { count: result.deleted }))
+      }
+
+      setBulkDeleteDialog({ open: false, mode: null })
+      exitSelectionMode()
+      // Re-sync with the server rather than guessing locally: a partial
+      // failure means the loaded list and the real state could differ.
+      await fetchSources(true)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string };
+      console.error('Failed to bulk-delete sources:', error)
+      toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const renderContent = () => {
     if (loading) {
       return (
@@ -323,11 +409,52 @@ export default function SourcesPage() {
 
     return (<>
       <div className="flex flex-col h-full w-full max-w-none px-6 py-6">
-        <div className="mb-6 flex-shrink-0">
-          <h1 className="font-display text-2xl font-bold tracking-tight">{t('sources.allSources')}</h1>
-          <p className="mt-2 text-muted-foreground">
-            {t('sources.allSourcesDesc')}
-          </p>
+        <div className="mb-6 flex-shrink-0 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight">{t('sources.allSources')}</h1>
+            <p className="mt-2 text-muted-foreground">
+              {t('sources.allSourcesDesc')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {selectionMode ? (
+              <>
+                <span className="text-sm text-muted-foreground px-1">
+                  {t('sources.selectedCount', { count: selectedIds.size })}
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={selectedIds.size === 0}
+                  onClick={openDeleteSelectedDialog}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t('sources.deleteSelected')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={exitSelectionMode}>
+                  <X className="h-4 w-4 mr-2" />
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={enterSelectionMode}>
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  {t('sources.selectSources')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={openDeleteAllDialog}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t('sources.deleteAllSources')}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div ref={scrollContainerRef} className="flex-1 rounded-md border overflow-auto">
@@ -337,6 +464,7 @@ export default function SourcesPage() {
             className="w-full min-w-[920px] outline-none table-fixed"
           >
             <colgroup>
+              {selectionMode && <col className="w-[44px]" />}
               <col className="w-[120px]" />
               <col className="w-auto" />
               <col className="w-[140px]" />
@@ -347,6 +475,15 @@ export default function SourcesPage() {
             </colgroup>
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b">
+                {selectionMode && (
+                  <th className="h-12 px-4 align-middle">
+                    <Checkbox
+                      checked={someLoadedSelected ? (allLoadedSelected ? true : 'indeterminate') : false}
+                      onCheckedChange={toggleSelectAllLoaded}
+                      aria-label={t('sources.selectAll')}
+                    />
+                  </th>
+                )}
                 <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
                   {renderSortableHeader('type', t('common.type'))}
                 </th>
@@ -383,6 +520,15 @@ export default function SourcesPage() {
                       : "hover:bg-[var(--surface-raised)]"
                   )}
                 >
+                  {selectionMode && (
+                    <td className="h-12 px-4" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(source.id)}
+                        onCheckedChange={() => toggleSourceSelected(source.id)}
+                        aria-label={source.title || t('sources.untitledSource')}
+                      />
+                    </td>
+                  )}
                   <td className="h-12 px-4">
                     <div className="flex items-center gap-2">
                       <span
@@ -450,7 +596,7 @@ export default function SourcesPage() {
               ))}
               {loadingMore && (
                 <tr>
-                  <td colSpan={7} className="h-16 text-center">
+                  <td colSpan={selectionMode ? 8 : 7} className="h-16 text-center">
                     <div className="flex items-center justify-center">
                       <LoadingSpinner />
                       <span className="ml-2 text-muted-foreground">{t('sources.loadingMore')}</span>
@@ -471,6 +617,23 @@ export default function SourcesPage() {
         confirmText={t('common.delete')}
         confirmVariant="destructive"
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteDialog.open}
+        onOpenChange={(open) => setBulkDeleteDialog({ open, mode: open ? bulkDeleteDialog.mode : null })}
+        title={bulkDeleteDialog.mode === 'all' ? t('sources.deleteAllSourcesTitle') : t('sources.deleteSelectedTitle')}
+        description={
+          bulkDeleteDialog.mode === 'all'
+            ? (totalSourceCount === null
+                ? t('sources.bulkDeleteAllConfirmLoading')
+                : t('sources.bulkDeleteAllConfirmCount', { count: totalSourceCount }))
+            : t('sources.bulkDeleteSelectedConfirm', { count: selectedIds.size })
+        }
+        confirmText={t('common.delete')}
+        confirmVariant="destructive"
+        isLoading={bulkDeleting}
+        onConfirm={handleBulkDeleteConfirm}
       />
     </>)
   }

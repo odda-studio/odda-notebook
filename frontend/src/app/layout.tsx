@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
-import {
-  Bricolage_Grotesque,
-  Instrument_Sans,
-  Spline_Sans_Mono,
-} from "next/font/google";
+import { Epilogue, Spline_Sans_Mono } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import { Toaster } from "@/components/ui/sonner";
@@ -14,15 +10,11 @@ import { ConnectionGuard } from "@/components/common/ConnectionGuard";
 import { themeScript } from "@/lib/theme-script";
 import { I18nProvider } from "@/components/providers/I18nProvider";
 
-const instrumentSans = Instrument_Sans({
+// Odda Studio brand font (the design system uses it for both text and
+// headings/logo).
+const epilogue = Epilogue({
   subsets: ["latin"],
-  variable: "--font-instrument-sans",
-});
-
-const bricolageGrotesque = Bricolage_Grotesque({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-bricolage",
+  variable: "--font-epilogue",
 });
 
 const splineSansMono = Spline_Sans_Mono({
@@ -31,7 +23,7 @@ const splineSansMono = Spline_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Open Notebook",
+  title: "Odda Notebook",
   description: "Privacy-focused research and knowledge management",
 };
 
@@ -46,7 +38,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body
-        className={`${instrumentSans.variable} ${bricolageGrotesque.variable} ${splineSansMono.variable} font-sans`}
+        className={`${epilogue.variable} ${splineSansMono.variable} font-sans`}
       >
         <ErrorBoundary>
           <ThemeProvider>

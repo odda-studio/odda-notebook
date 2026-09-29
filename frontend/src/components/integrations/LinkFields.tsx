@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import { useTransformations } from '@/lib/hooks/use-transformations'
+import { useTransformations, useTransformationGroups } from '@/lib/hooks/use-transformations'
+import { GroupedTransformationPicker } from '@/components/transformations/GroupedTransformationPicker'
 
 /** Minimum per-link sync interval accepted by the backend. */
 export const MIN_SYNC_INTERVAL_MINUTES = 5
@@ -83,6 +84,7 @@ export function LinkFields({
   const { t } = useTranslation()
   const { data: notebooks, isLoading: notebooksLoading } = useNotebooks(false)
   const { data: transformations, isLoading: transformationsLoading } = useTransformations()
+  const { data: transformationGroups } = useTransformationGroups()
 
   const notebookItems = useMemo(() => {
     const items = (notebooks ?? []).map(nb => ({ id: nb.id, title: nb.name }))
@@ -94,20 +96,10 @@ export function LinkFields({
     return items
   }, [notebooks, values.notebook_ids, knownNotebookNames])
 
-  const transformationItems = useMemo(
-    () =>
-      (transformations ?? []).map(tr => ({
-        id: tr.id,
-        title: tr.title || tr.name,
-        description: tr.description,
-      })),
-    [transformations]
-  )
-
   const set = <K extends keyof LinkFieldValues>(key: K, value: LinkFieldValues[K]) =>
     onChange({ ...values, [key]: value })
 
-  const toggle = (key: 'notebook_ids' | 'transformations', id: string) =>
+  const toggle = (key: 'notebook_ids', id: string) =>
     set(key, values[key].includes(id) ? values[key].filter(x => x !== id) : [...values[key], id])
 
   const intervalInvalid =
@@ -186,10 +178,11 @@ export function LinkFields({
         <div className="space-y-2">
           <Label>{t('integrations.transformations')}</Label>
           <p className="text-xs text-muted-foreground">{t('integrations.transformationsHint')}</p>
-          <CheckboxList
-            items={transformationItems}
+          <GroupedTransformationPicker
+            transformations={transformations ?? []}
+            groups={transformationGroups}
             selectedIds={values.transformations}
-            onToggle={id => toggle('transformations', id)}
+            onChange={ids => set('transformations', ids)}
             loading={transformationsLoading}
             emptyMessage={t('integrations.noTransformations')}
           />

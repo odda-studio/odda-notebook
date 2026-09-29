@@ -1,0 +1,7 @@
+-- Rollback Migration 27: remove transformation groups
+
+REMOVE EVENT IF EXISTS transformation_delete_unlink ON TABLE transformation;
+REMOVE EVENT IF EXISTS transformation_group_delete ON TABLE transformation_group;
+REMOVE INDEX IF EXISTS idx_transformation_group_id ON TABLE transformation;
+REMOVE FIELD IF EXISTS group_id ON TABLE transformation;
+REMOVE TABLE IF EXISTS transformation_group;

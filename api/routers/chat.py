@@ -1,6 +1,6 @@
 import asyncio
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from langchain_core.runnables import RunnableConfig
@@ -13,15 +13,22 @@ from api.routers._chat_shared import (
     extract_chat_messages,
     get_session_or_404,
 )
+from open_notebook.ai.models import model_manager
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Notebook
 from open_notebook.exceptions import (
+    ConfigurationError,
+    InvalidInputError,
     NotFoundError,
     OpenNotebookError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils import token_count
-from open_notebook.utils.context_builder import build_notebook_context
+from open_notebook.utils.context_builder import (
+    RETRIEVAL_DEFAULT_PASSAGES,
+    build_notebook_context,
+    build_retrieval_context,
+)
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -63,6 +70,28 @@ class ChatSessionWithMessagesResponse(ChatSessionResponse):
     )
 
 
+class ChatRetrievalOptions(BaseModel):
+    """Answer from the passages most similar to the question (vector search)
+    instead of sending the selected sources in full / as insights."""
+
+    enabled: bool = False
+    source_modes: Dict[str, Literal["insights", "full"]] = Field(
+        default_factory=dict,
+        description=(
+            "Context level of each source the search may use: 'insights' searches "
+            "only its insights, 'full' its text and insights"
+        ),
+    )
+    source_ids: List[str] = Field(
+        default_factory=list,
+        description="Deprecated: sources searched as 'full' when source_modes is empty",
+    )
+    note_ids: List[str] = Field(
+        default_factory=list, description="Notes the search may use (not switched off)"
+    )
+    max_passages: int = Field(RETRIEVAL_DEFAULT_PASSAGES, ge=1, le=50)
+
+
 class ExecuteChatRequest(BaseModel):
     session_id: str = Field(..., description="Chat session ID")
     message: str = Field(..., description="User message content")
@@ -72,11 +101,28 @@ class ExecuteChatRequest(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Optional model override for this message"
     )
+    retrieval: Optional[ChatRetrievalOptions] = Field(
+        None, description="Retrieval mode: ignore `context`, search the notebook instead"
+    )
 
 
 class ExecuteChatResponse(BaseModel):
     session_id: str = Field(..., description="Session ID")
     messages: List[ChatMessage] = Field(..., description="Updated message list")
+    retrieved_passages: Optional[int] = Field(
+        None, description="Passages used in retrieval mode (None otherwise)"
+    )
+
+
+def _retrieval_query(previous_messages: list, message: str) -> str:
+    """The question to embed. Follow-ups ("and in chapter 3?") only make sense
+    with the previous question, so it is prepended."""
+    from langchain_core.messages import HumanMessage
+
+    previous = [m for m in previous_messages if isinstance(m, HumanMessage)]
+    if previous:
+        return f"{previous[-1].content}\n{message}"
+    return message
 
 
 class BuildContextRequest(BaseModel):
@@ -335,6 +381,29 @@ async def execute_chat(request: ExecuteChatRequest):
         state_values = current_state.values if current_state else {}
         state_values["messages"] = state_values.get("messages", [])
         state_values["context"] = request.context
+        state_values["retrieval"] = False
+        retrieved_passages: Optional[int] = None
+        if request.retrieval and request.retrieval.enabled:
+            if not notebook or not notebook.id:
+                raise InvalidInputError("Retrieval mode requires a notebook chat session")
+            if not await model_manager.get_embedding_model():
+                raise ConfigurationError(
+                    "Retrieval mode requires an embedding model. "
+                    "Configure one in the Models section."
+                )
+            modes = request.retrieval.source_modes or {
+                source_id: "full" for source_id in request.retrieval.source_ids
+            }
+            context_data, retrieved_passages = await build_retrieval_context(
+                str(notebook.id),
+                _retrieval_query(state_values["messages"], request.message),
+                full_source_ids=[s for s, m in modes.items() if m == "full"],
+                insight_source_ids=[s for s, m in modes.items() if m == "insights"],
+                note_ids=request.retrieval.note_ids,
+                max_passages=request.retrieval.max_passages,
+            )
+            state_values["context"] = context_data
+            state_values["retrieval"] = True
         state_values["notebook"] = notebook
         state_values["model_override"] = model_override
 
@@ -370,7 +439,11 @@ async def execute_chat(request: ExecuteChatRequest):
         # Convert messages to response format
         messages = extract_chat_messages(result.get("messages", []))
 
-        return ExecuteChatResponse(session_id=request.session_id, messages=messages)
+        return ExecuteChatResponse(
+            session_id=request.session_id,
+            messages=messages,
+            retrieved_passages=retrieved_passages,
+        )
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
     except HTTPException:

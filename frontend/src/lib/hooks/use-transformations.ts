@@ -1,12 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transformationsApi } from '@/lib/api/transformations'
+import { transformationGroupsApi } from '@/lib/api/transformation-groups'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import {
   CreateTransformationRequest,
   UpdateTransformationRequest,
-  ExecuteTransformationRequest
+  ExecuteTransformationRequest,
+  CreateTransformationGroupRequest,
+  UpdateTransformationGroupRequest,
 } from '@/lib/types/transformations'
 
 // Add to QUERY_KEYS in query-client.ts
@@ -14,6 +17,7 @@ export const TRANSFORMATION_QUERY_KEYS = {
   transformations: ['transformations'] as const,
   transformation: (id: string) => ['transformations', id] as const,
   defaultPrompt: ['transformations', 'default-prompt'] as const,
+  groups: ['transformation-groups'] as const,
 }
 
 export function useTransformations() {
@@ -41,6 +45,7 @@ export function useCreateTransformation() {
     mutationFn: (data: CreateTransformationRequest) => transformationsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformations })
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
       toast({
         title: t('common.success'),
         description: t('transformations.createSuccess'),
@@ -67,6 +72,7 @@ export function useUpdateTransformation() {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformations })
       queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformation(id) })
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
       toast({
         title: t('common.success'),
         description: t('transformations.updateSuccess'),
@@ -91,6 +97,7 @@ export function useDeleteTransformation() {
     mutationFn: (id: string) => transformationsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformations })
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
       toast({
         title: t('common.success'),
         description: t('transformations.deleteSuccess'),
@@ -141,6 +148,92 @@ export function useUpdateDefaultPrompt() {
       toast({
         title: t('common.success'),
         description: t('transformations.updateSuccess'),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, (key) => t(key)),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+
+export function useTransformationGroups() {
+  return useQuery({
+    queryKey: TRANSFORMATION_QUERY_KEYS.groups,
+    queryFn: () => transformationGroupsApi.list(),
+  })
+}
+
+export function useCreateTransformationGroup() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: (data: CreateTransformationGroupRequest) => transformationGroupsApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
+      toast({
+        title: t('common.success'),
+        description: t('transformations.groupCreateSuccess'),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, (key) => t(key)),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useUpdateTransformationGroup() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateTransformationGroupRequest }) =>
+      transformationGroupsApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
+      toast({
+        title: t('common.success'),
+        description: t('transformations.groupUpdateSuccess'),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, (key) => t(key)),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+export function useDeleteTransformationGroup() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({ id, deleteTransformations }: { id: string; deleteTransformations: boolean }) =>
+      transformationGroupsApi.delete(id, deleteTransformations),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.groups })
+      queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformations })
+      toast({
+        title: t('common.success'),
+        description: t('transformations.groupDeleteResult', {
+          deleted: result.deleted_transformations,
+          ungrouped: result.ungrouped_transformations,
+        }),
       })
     },
     onError: (error: unknown) => {

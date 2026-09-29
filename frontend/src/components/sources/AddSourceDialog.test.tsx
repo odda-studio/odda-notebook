@@ -26,6 +26,7 @@ vi.mock('@/lib/hooks/use-notebooks', () => ({
 }))
 vi.mock('@/lib/hooks/use-transformations', () => ({
   useTransformations: () => ({ isLoading: false, data: [] }),
+  useTransformationGroups: () => ({ isLoading: false, data: [] }),
 }))
 vi.mock('@/lib/hooks/use-settings', () => ({
   useSettings: () => ({ data: { default_embedding_option: 'ask' } }),

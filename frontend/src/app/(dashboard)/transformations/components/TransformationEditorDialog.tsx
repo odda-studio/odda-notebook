@@ -22,6 +22,7 @@ import {
   useCreateTransformation,
   useUpdateTransformation,
   useTransformation,
+  useTransformationGroups,
 } from '@/lib/hooks/use-transformations'
 import { useModels } from '@/lib/hooks/use-models'
 import { Transformation } from '@/lib/types/transformations'
@@ -30,6 +31,7 @@ import { TRANSFORMATION_QUERY_KEYS } from '@/lib/hooks/use-transformations'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 const DEFAULT_MODEL_VALUE = '__default_transformation_model__'
+const NO_GROUP_VALUE = '__no_transformation_group__'
 
 const transformationSchema = z.object({
   name: z.string().min(1),
@@ -38,6 +40,7 @@ const transformationSchema = z.object({
   prompt: z.string().min(1),
   apply_default: z.boolean().optional(),
   model_id: z.string().nullable().optional(),
+  group_id: z.string().nullable().optional(),
 })
 
 type TransformationFormData = z.infer<typeof transformationSchema>
@@ -46,9 +49,11 @@ interface TransformationEditorDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   transformation?: Transformation
+  /** Group preselected when creating a new transformation. */
+  defaultGroupId?: string | null
 }
 
-export function TransformationEditorDialog({ open, onOpenChange, transformation }: TransformationEditorDialogProps) {
+export function TransformationEditorDialog({ open, onOpenChange, transformation, defaultGroupId = null }: TransformationEditorDialogProps) {
   const { t } = useTranslation()
   const nameId = useId()
   const titleId = useId()
@@ -56,11 +61,13 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
   const descriptionId = useId()
   const promptId = useId()
   const modelId = useId()
+  const groupId = useId()
   const isEditing = Boolean(transformation)
   const { data: fetchedTransformation, isLoading } = useTransformation(transformation?.id ?? '', {
     enabled: open && Boolean(transformation?.id),
   })
   const { data: models = [], isLoading: isLoadingModels } = useModels()
+  const { data: groups = [], isLoading: isLoadingGroups } = useTransformationGroups()
   const languageModels = useMemo(
     () => models.filter((model) => model.type === 'language'),
     [models]
@@ -83,6 +90,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
       prompt: '',
       apply_default: false,
       model_id: null,
+      group_id: null,
     },
   })
 
@@ -95,6 +103,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
         prompt: '',
         apply_default: false,
         model_id: null,
+        group_id: null,
       })
       return
     }
@@ -107,11 +116,14 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
       prompt: source?.prompt ?? '',
       apply_default: source?.apply_default ?? false,
       model_id: source?.model_id ?? null,
+      group_id: source ? source.group_id ?? null : defaultGroupId,
     })
-  }, [open, transformation, fetchedTransformation, reset])
+  }, [open, transformation, fetchedTransformation, defaultGroupId, reset])
 
   const onSubmit = async (data: TransformationFormData) => {
+    const selectedGroupId = data.group_id || null
     if (transformation) {
+      const originalGroupId = (fetchedTransformation ?? transformation).group_id ?? null
       await updateTransformation.mutateAsync({
         id: transformation.id,
         data: {
@@ -121,6 +133,8 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
           prompt: data.prompt,
           apply_default: Boolean(data.apply_default),
           model_id: data.model_id || null,
+          // Only send group_id when it changed (null explicitly ungroups).
+          ...(selectedGroupId !== originalGroupId ? { group_id: selectedGroupId } : {}),
         },
       })
       queryClient.invalidateQueries({ queryKey: TRANSFORMATION_QUERY_KEYS.transformation(transformation.id) })
@@ -132,6 +146,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
         prompt: data.prompt,
         apply_default: Boolean(data.apply_default),
         model_id: data.model_id || null,
+        group_id: selectedGroupId,
       })
     }
 
@@ -148,20 +163,20 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] overflow-hidden p-0">
+      <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] overflow-hidden p-0 flex flex-col gap-0">
         <DialogTitle className="sr-only">
           {isEditing ? t('common.edit') : t('transformations.createNew')}
         </DialogTitle>
         <DialogDescription className="sr-only">
            {isEditing ? t('common.editTransformation') : t('transformations.createNew')}
         </DialogDescription>
-        <form onSubmit={handleSubmit(onSubmit)} className="flex h-full flex-col">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
           {isEditing && isLoading ? (
             <div className="flex-1 flex items-center justify-center py-10">
               <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
             </div>
           ) : (
-            <>
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="border-b px-6 py-4 space-y-4">
                 <div>
                   <Label htmlFor={nameId} className="text-sm font-medium">
@@ -257,6 +272,40 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
                 </div>
 
                 <div>
+                  <Label htmlFor={groupId} className="text-sm font-medium">
+                    {t('transformations.group')}
+                  </Label>
+                  <Controller
+                    control={control}
+                    name="group_id"
+                    render={({ field }) => (
+                      <Select
+                        name={field.name}
+                        value={field.value ?? NO_GROUP_VALUE}
+                        onValueChange={(value) =>
+                          field.onChange(value === NO_GROUP_VALUE ? null : value)
+                        }
+                        disabled={isLoadingGroups}
+                      >
+                        <SelectTrigger id={groupId} className="w-full md:w-1/2">
+                          <SelectValue placeholder={t('transformations.ungrouped')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_GROUP_VALUE}>
+                            {t('transformations.ungrouped')}
+                          </SelectItem>
+                          {groups.map((group) => (
+                            <SelectItem key={group.id} value={group.id}>
+                              {group.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+
+                <div>
                    <Label htmlFor={descriptionId} className="text-sm font-medium">
                      {t('notebooks.addDescription').replace('...', '')}
                    </Label>
@@ -276,7 +325,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="px-6 py-4">
                 <Label htmlFor={promptId} className="text-sm font-medium">{t('transformations.systemPrompt')}</Label>
                 <Controller
                   control={control}
@@ -301,10 +350,10 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation 
                    {t('transformations.promptHint')}
                  </p>
               </div>
-            </>
+            </div>
           )}
 
-          <div className="border-t px-6 py-4 flex justify-end gap-2">
+          <div className="shrink-0 border-t px-6 py-4 flex justify-end gap-2">
              <Button type="button" variant="outline" onClick={handleClose}>
                {t('common.cancel')}
              </Button>

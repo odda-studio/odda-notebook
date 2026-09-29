@@ -44,6 +44,7 @@ from api.routers import (
     source_chat,
     sources,
     speaker_profiles,
+    transformation_groups,
     transformations,
 )
 from api.routers import commands as commands_router
@@ -391,6 +392,9 @@ app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(models.router, prefix="/api", tags=["models"])
 app.include_router(transformations.router, prefix="/api", tags=["transformations"])
+app.include_router(
+    transformation_groups.router, prefix="/api", tags=["transformation-groups"]
+)
 app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(embedding.router, prefix="/api", tags=["embedding"])
 app.include_router(

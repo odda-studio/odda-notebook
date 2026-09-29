@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DefaultPromptEditor } from './components/DefaultPromptEditor'
 import { TransformationsList } from './components/TransformationsList'
 import { TransformationPlayground } from './components/TransformationPlayground'
-import { useTransformations } from '@/lib/hooks/use-transformations'
+import { useTransformations, useTransformationGroups } from '@/lib/hooks/use-transformations'
 import { Transformation } from '@/lib/types/transformations'
 import { Wand2, Play, RefreshCw } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -17,6 +17,7 @@ export default function TransformationsPage() {
   const [activeTab, setActiveTab] = useState('transformations')
   const [selectedTransformation, setSelectedTransformation] = useState<Transformation | undefined>()
   const { data: transformations, isLoading, refetch } = useTransformations()
+  const { data: groups, isLoading: groupsLoading, refetch: refetchGroups } = useTransformationGroups()
 
   const handlePlayground = (transformation: Transformation) => {
     setSelectedTransformation(transformation)
@@ -30,7 +31,7 @@ export default function TransformationsPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h1 className="font-display text-2xl font-bold tracking-tight">{t('transformations.title')}</h1>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <Button variant="outline" size="sm" onClick={() => { refetch(); refetchGroups() }}>
                 <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -60,8 +61,9 @@ export default function TransformationsPage() {
           <TabsContent value="transformations" className="space-y-6">
             <DefaultPromptEditor />
             <TransformationsList 
-              transformations={transformations} 
-              isLoading={isLoading}
+              transformations={transformations}
+              groups={groups}
+              isLoading={isLoading || groupsLoading}
               onPlayground={handlePlayground}
             />
           </TabsContent>
@@ -69,6 +71,7 @@ export default function TransformationsPage() {
           <TabsContent value="playground">
             <TransformationPlayground 
               transformations={transformations}
+              groups={groups}
               selectedTransformation={selectedTransformation}
             />
           </TabsContent>

@@ -7,7 +7,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Search } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
@@ -53,6 +54,10 @@ interface ChatPanelProps {
   notebookContextStats?: NotebookContextStats
   // Notebook ID for saving notes
   notebookId?: string
+  // Retrieval mode (notebook chat): answer from the most similar passages
+  retrievalMode?: boolean
+  onRetrievalModeChange?: (enabled: boolean) => void
+  retrievedPassages?: number | null
 }
 
 export function ChatPanel({
@@ -72,9 +77,13 @@ export function ChatPanel({
   title,
   contextType = 'source',
   notebookContextStats,
+  retrievalMode = false,
+  onRetrievalModeChange,
+  retrievedPassages,
   notebookId
 }: ChatPanelProps) {
   const { t } = useTranslation()
+  const retrievalToggleId = useId()
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -210,9 +219,34 @@ export function ChatPanel({
             sourcesInsights={notebookContextStats.sourcesInsights}
             sourcesFull={notebookContextStats.sourcesFull}
             notesCount={notebookContextStats.notesCount}
-            tokenCount={notebookContextStats.tokenCount}
-            charCount={notebookContextStats.charCount}
+            // In retrieval mode only the matching passages are sent, so the
+            // size of the whole selection is not what the model receives
+            tokenCount={retrievalMode ? undefined : notebookContextStats.tokenCount}
+            charCount={retrievalMode ? undefined : notebookContextStats.charCount}
           />
+        )}
+
+        {/* Retrieval mode toggle (notebook chat) */}
+        {onRetrievalModeChange && (
+          <div className="flex-shrink-0 flex items-start gap-2 px-3 py-2 border-t text-xs">
+            <Checkbox
+              id={retrievalToggleId}
+              checked={retrievalMode}
+              onCheckedChange={(checked) => onRetrievalModeChange(checked === true)}
+              className="mt-0.5"
+            />
+            <label htmlFor={retrievalToggleId} className="cursor-pointer space-y-0.5">
+              <span className="flex items-center gap-1 font-medium">
+                <Search className="h-3 w-3" />
+                {t('chat.retrievalMode')}
+              </span>
+              <span className="block text-muted-foreground">
+                {retrievalMode && retrievedPassages !== null && retrievedPassages !== undefined
+                  ? t('chat.retrievedPassages', { count: retrievedPassages })
+                  : t('chat.retrievalModeHint')}
+              </span>
+            </label>
+          </div>
         )}
 
         {/* Input Area */}

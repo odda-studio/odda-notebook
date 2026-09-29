@@ -108,3 +108,47 @@ describe('ChatPanel composer', () => {
     expect(onSendMessage).not.toHaveBeenCalled()
   })
 })
+
+describe('ChatPanel retrieval mode', () => {
+  beforeEach(() => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('is only offered when the parent handles it (notebook chat)', () => {
+    render(
+      <ChatPanel messages={[]} isStreaming={false} contextIndicators={null} onSendMessage={vi.fn()} />
+    )
+    expect(screen.queryByText('chat.retrievalMode')).not.toBeInTheDocument()
+  })
+
+  it('toggles and reports the passages used by the last answer', () => {
+    const onRetrievalModeChange = vi.fn()
+    const { rerender } = render(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        retrievalMode={false}
+        onRetrievalModeChange={onRetrievalModeChange}
+      />
+    )
+    expect(screen.getByText('chat.retrievalModeHint')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(onRetrievalModeChange).toHaveBeenCalledWith(true)
+
+    rerender(
+      <ChatPanel
+        messages={[]}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+        retrievalMode
+        onRetrievalModeChange={onRetrievalModeChange}
+        retrievedPassages={7}
+      />
+    )
+    expect(screen.getByRole('checkbox')).toBeChecked()
+    expect(screen.getByText('chat.retrievedPassages')).toBeInTheDocument()
+  })
+})

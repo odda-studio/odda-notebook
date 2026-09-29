@@ -52,6 +52,8 @@ export const chatApi = {
     const response = await apiClient.post<{
       session_id: string
       messages: NotebookChatMessage[]
+      /** Passages used in retrieval mode, null otherwise. */
+      retrieved_passages?: number | null
     }>(
       `/chat/execute`,
       data

@@ -150,6 +150,9 @@ class TransformationCreate(BaseModel):
     model_id: Optional[str] = Field(
         None, description="Model ID to use by default for this transformation"
     )
+    group_id: Optional[str] = Field(
+        None, description="Transformation group, or null for ungrouped"
+    )
 
 
 class TransformationUpdate(BaseModel):
@@ -167,6 +170,10 @@ class TransformationUpdate(BaseModel):
     model_id: Optional[str] = Field(
         None, description="Model ID to use by default for this transformation"
     )
+    group_id: Optional[str] = Field(
+        None,
+        description="Transformation group; send null explicitly to ungroup, omit to keep",
+    )
 
 
 class TransformationResponse(BaseModel):
@@ -177,8 +184,35 @@ class TransformationResponse(BaseModel):
     prompt: str
     apply_default: bool
     model_id: Optional[str] = None
+    group_id: Optional[str] = None
     created: str
     updated: str
+
+
+class TransformationGroupWrite(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be empty")
+        return value
+
+
+class TransformationGroupResponse(BaseModel):
+    id: str
+    name: str
+    transformation_count: int = 0
+    created: str
+    updated: str
+
+
+class TransformationGroupDeleteResponse(BaseModel):
+    message: str
+    deleted_transformations: int
+    ungrouped_transformations: int
 
 
 class TransformationExecuteRequest(BaseModel):
@@ -1037,3 +1071,35 @@ class SourceCloudInfoResponse(BaseModel):
 
 class IntegrationMessageResponse(BaseModel):
     message: str
+
+
+# Bulk source deletion (the "delete selected" / "delete all" toolbar on the
+# general Sources page)
+class SourceCountResponse(BaseModel):
+    count: int = Field(..., description="Total number of sources")
+
+
+class SourceBulkDeleteRequest(BaseModel):
+    ids: Optional[List[str]] = Field(
+        None, max_length=1000, description="Specific source ids to delete"
+    )
+    all: bool = Field(
+        False, description="Delete every source instead of a specific list"
+    )
+
+    @model_validator(mode="after")
+    def _check_scope(self):
+        if self.all:
+            if self.ids:
+                raise ValueError("Provide either `ids` or `all`, not both")
+        elif not self.ids:
+            raise ValueError("Provide `ids`, or set `all` to true")
+        return self
+
+
+class SourceBulkDeleteResponse(BaseModel):
+    deleted: int = Field(..., description="Number of sources deleted (or already gone)")
+    failed: int = Field(..., description="Number of sources that failed to delete")
+    errors: List[str] = Field(
+        default_factory=list, description="First few failures, if any, as \"id: reason\""
+    )

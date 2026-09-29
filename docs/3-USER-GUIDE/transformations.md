@@ -274,9 +274,16 @@ Keep technical but concise."
 4. Confirm
 ```
 
-### Reorder/Organize
+### Organize in Groups
 
-Built-in transformations appear first, then custom ones alphabetically.
+Transformations can be grouped into folders (one level), e.g. "CV", "Contracts", "Summaries":
+
+- **New group** on the Transformations page creates one; each group header lets you rename it, delete it, or create a transformation directly inside it.
+- Put a transformation in a group from its editor (**Group** field) or with **Move to group** on its card. A transformation belongs to at most one group; the rest are listed under **Ungrouped**.
+- **Deleting a group** asks every time what to do with its transformations: keep them (they become ungrouped) or delete them too. Deleted transformations are also removed from any cloud-sync link that ran them.
+- Wherever you pick transformations (Add Source, cloud import, a source's detail page, the playground) they are listed by group; in multi-select lists the group checkbox selects or clears the whole group.
+
+Within each group transformations are sorted alphabetically.
 
 ---
 

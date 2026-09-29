@@ -15,7 +15,13 @@ Whenever a user asks you a question, you need to identify the query context and 
 **Description:** {{notebook.description}}
 {% endif %}
 
-{% if context %}
+{% if retrieval %}
+# CONTEXT
+
+These passages were retrieved from the notebook because they are the most similar to the user's latest question. They are excerpts, not whole documents: answer from them, cite them, and if they don't contain the answer say so plainly instead of guessing (the user can switch off search mode to send whole sources).
+
+{{context}}
+{% elif context %}
 # CONTEXT
 
 The user has selected this context to help you with your response:

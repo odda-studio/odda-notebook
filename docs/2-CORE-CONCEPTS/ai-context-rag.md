@@ -308,6 +308,18 @@ AI:
 
 ---
 
+### Chat with "Search sources (RAG)" on
+
+The notebook chat has a **Search sources (RAG)** switch under the context bar (remembered per notebook). When it is on:
+
+- each item's context level decides *where* to search: a source on **Insights** is searched only in its insights, a source on **Full** in its text and its insights, included notes in their content; switched-off items are never used;
+- for every message, the question (plus your previous question, so follow-ups work) is embedded and the most similar passages of this notebook are sent to the model (up to 12) instead of the whole selection. Similarity is computed per passage, and every item (each source's text, each insight, each note) first gets its best passage before the remaining slots go by similarity — so high-scoring raw text can't crowd out insights or other sources;
+- the conversation keeps its history like a normal chat, and answers still cite `[source:…]` ids;
+- it needs an embedding model and sources that have been embedded.
+
+**When it helps:** many or long sources that don't fit (or barely fit) the model's context window, and precise questions whose answer sits in a few paragraphs — less noise, lower cost, faster answers.
+**When to leave it off:** summaries, comparisons or questions about a whole document, and small selections that fit comfortably: sending the full text lets the model see everything, retrieval only sees what the search found.
+
 ### Ask: RAG - Automatic Retrieval
 
 **How it works:**

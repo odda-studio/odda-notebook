@@ -24,6 +24,9 @@ from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
     InsightCreationResponse,
+    SourceBulkDeleteRequest,
+    SourceBulkDeleteResponse,
+    SourceCountResponse,
     SourceCreate,
     SourceInsightResponse,
     SourceListResponse,
@@ -338,6 +341,66 @@ async def get_sources(
     except Exception as e:
         logger.error(f"Error fetching sources: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching sources")
+
+
+# NOTE: this literal route must stay registered before GET /sources/{source_id}
+# below - FastAPI matches routes in registration order, so a parameterized
+# route defined first would swallow "/sources/count" as source_id="count".
+@router.get("/sources/count", response_model=SourceCountResponse)
+async def count_sources():
+    """Total number of sources. Used by "Delete all sources" to show what a
+    confirmation is about to remove, without paging through the full list."""
+    try:
+        result = await repo_query("SELECT count() AS n FROM source GROUP ALL")
+        return SourceCountResponse(count=result[0]["n"] if result else 0)
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error counting sources: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error counting sources")
+
+
+@router.post("/sources/bulk-delete", response_model=SourceBulkDeleteResponse)
+async def bulk_delete_sources(request: SourceBulkDeleteRequest):
+    """Delete many sources at once: a specific set of ids, or every source
+    (``all=true``). Mirrors ``DELETE /sources/{id}`` per source (unlinks the
+    file, embeddings and insights; cloud-sync mappings are marked "ignored"
+    by the same DB event used for a single delete), so one failed or already
+    missing source never stops the rest of the batch."""
+    try:
+        if request.all:
+            ids = [str(row) for row in await repo_query("SELECT VALUE id FROM source")]
+        else:
+            ids = request.ids or []
+
+        deleted = 0
+        errors: List[str] = []
+        for source_id in ids:
+            try:
+                source = await Source.get(source_id)
+                await source.delete()
+                deleted += 1
+            except NotFoundError:
+                # Already gone: bulk delete is idempotent, count it as done.
+                deleted += 1
+            except Exception as e:
+                logger.warning(f"Bulk delete failed for source {source_id}: {e}")
+                errors.append(f"{source_id}: {_truncate_error(str(e))}")
+
+        if errors:
+            logger.warning(
+                f"Bulk delete: {deleted} deleted, {len(errors)} failed out of {len(ids)}"
+            )
+        return SourceBulkDeleteResponse(
+            deleted=deleted, failed=len(errors), errors=errors[:20]
+        )
+    except HTTPException:
+        raise
+    except OpenNotebookError:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk-deleting sources: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error deleting sources")
 
 
 def _source_to_response(

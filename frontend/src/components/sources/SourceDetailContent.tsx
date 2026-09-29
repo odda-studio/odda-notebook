@@ -8,6 +8,8 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useSource, useUpdateSource, useDeleteSource } from '@/lib/hooks/use-sources'
 import { insightsApi, SourceInsightResponse } from '@/lib/api/insights'
 import { transformationsApi } from '@/lib/api/transformations'
+import { useTransformationGroups } from '@/lib/hooks/use-transformations'
+import { GroupedTransformationSelectItems } from '@/components/transformations/GroupedTransformationSelectItems'
 import { embeddingApi } from '@/lib/api/embedding'
 import { SourceDetailResponse } from '@/lib/types/api'
 import { Transformation } from '@/lib/types/transformations'
@@ -40,7 +42,6 @@ import {
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -106,6 +107,7 @@ function SourceDetailContentInner({
   const [insights, setInsights] = useState<SourceInsightResponse[]>([])
   const [transformations, setTransformations] = useState<Transformation[]>([])
   const [selectedTransformation, setSelectedTransformation] = useState<string>('')
+  const { data: transformationGroups } = useTransformationGroups()
   const [loadingInsights, setLoadingInsights] = useState(false)
   const [creatingInsight, setCreatingInsight] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -575,11 +577,11 @@ function SourceDetailContentInner({
                       <SelectValue placeholder={t('sources.selectTransformation')} />
                     </SelectTrigger>
                     <SelectContent>
-                      {transformations.map((trans) => (
-                        <SelectItem key={trans.id} value={trans.id}>
-                          {trans.title || trans.name}
-                        </SelectItem>
-                      ))}
+                      <GroupedTransformationSelectItems
+                        transformations={transformations}
+                        groups={transformationGroups}
+                        getLabel={(trans) => trans.title || trans.name}
+                      />
                     </SelectContent>
                   </Select>
                   <Button

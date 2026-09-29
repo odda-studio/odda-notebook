@@ -6,23 +6,46 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown, ChevronRight, Trash2, Wand2, Edit } from 'lucide-react'
-import { Transformation } from '@/lib/types/transformations'
-import { useDeleteTransformation } from '@/lib/hooks/use-transformations'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ChevronDown, ChevronRight, Trash2, Wand2, Edit, FolderInput } from 'lucide-react'
+import { Transformation, TransformationGroup } from '@/lib/types/transformations'
+import { useDeleteTransformation, useUpdateTransformation } from '@/lib/hooks/use-transformations'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
 interface TransformationCardProps {
   transformation: Transformation
+  /** Enables the "Move to group" menu. */
+  groups?: TransformationGroup[]
   onPlayground?: () => void
   onEdit?: () => void
 }
 
-export function TransformationCard({ transformation, onPlayground, onEdit }: TransformationCardProps) {
+const UNGROUPED_VALUE = '__ungrouped__'
+
+export function TransformationCard({ transformation, groups, onPlayground, onEdit }: TransformationCardProps) {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const deleteTransformation = useDeleteTransformation()
+  const updateTransformation = useUpdateTransformation()
+
+  const currentGroupValue = transformation.group_id ?? UNGROUPED_VALUE
+  const handleMove = (value: string) => {
+    if (value === currentGroupValue) return
+    updateTransformation.mutate({
+      id: transformation.id,
+      data: { group_id: value === UNGROUPED_VALUE ? null : value },
+    })
+  }
 
   const handleDelete = () => {
     deleteTransformation.mutate(transformation.id)
@@ -55,6 +78,36 @@ export function TransformationCard({ transformation, onPlayground, onEdit }: Tra
               </CollapsibleTrigger>
 
               <div className="flex items-center gap-2">
+                {groups && groups.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={t('transformations.moveToGroup')}
+                        title={t('transformations.moveToGroup')}
+                        disabled={updateTransformation.isPending}
+                      >
+                        <FolderInput className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>{t('transformations.moveToGroup')}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuRadioGroup value={currentGroupValue} onValueChange={handleMove}>
+                        {groups.map((group) => (
+                          <DropdownMenuRadioItem key={group.id} value={group.id}>
+                            {group.name}
+                          </DropdownMenuRadioItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuRadioItem value={UNGROUPED_VALUE}>
+                          {t('transformations.ungrouped')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 {onPlayground && (
                   <Button variant="outline" size="sm" onClick={onPlayground}>
                     <Wand2 className="h-4 w-4 mr-2" />

@@ -3,9 +3,9 @@
 import { Control, Controller } from "react-hook-form"
 import { useTranslation } from "@/lib/hooks/use-translation"
 import { FormSection } from "@/components/ui/form-section"
-import { CheckboxList } from "@/components/ui/checkbox-list"
+import { GroupedTransformationPicker } from "@/components/transformations/GroupedTransformationPicker"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Transformation } from "@/lib/types/transformations"
+import { Transformation, TransformationGroup } from "@/lib/types/transformations"
 import { SettingsResponse } from "@/lib/types/api"
 
 interface CreateSourceFormData {
@@ -23,8 +23,9 @@ interface CreateSourceFormData {
 interface ProcessingStepProps {
   control: Control<CreateSourceFormData>
   transformations: Transformation[]
+  groups?: TransformationGroup[]
   selectedTransformations: string[]
-  onToggleTransformation: (transformationId: string) => void
+  onTransformationsChange: (transformationIds: string[]) => void
   loading?: boolean
   settings?: SettingsResponse
   /** Cloud imports don't take a per-request embedding choice. */
@@ -34,18 +35,14 @@ interface ProcessingStepProps {
 export function ProcessingStep({
   control,
   transformations,
+  groups,
   selectedTransformations,
-  onToggleTransformation,
+  onTransformationsChange,
   loading = false,
   settings,
   showEmbeddingOptions = true
 }: ProcessingStepProps) {
   const { t } = useTranslation()
-  const transformationItems = transformations.map((transformation) => ({
-    id: transformation.id,
-    title: transformation.title,
-    description: transformation.description
-  }))
 
   return (
     <div className="space-y-8">
@@ -53,10 +50,11 @@ export function ProcessingStep({
         title={`${t('navigation.transformations')} (${t('common.optional')})`}
         description={t('sources.processDescription')}
       >
-        <CheckboxList
-          items={transformationItems}
+        <GroupedTransformationPicker
+          transformations={transformations}
+          groups={groups}
           selectedIds={selectedTransformations}
-          onToggle={onToggleTransformation}
+          onChange={onTransformationsChange}
           loading={loading}
           emptyMessage={t('common.noMatches')}
         />

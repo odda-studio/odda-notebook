@@ -33,6 +33,30 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [charCount, setCharCount] = useState<number>(0)
   // Pending model override for when user changes model before a session exists
   const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
+  // Retrieval mode: search the selected sources/notes for the passages most
+  // similar to the question instead of sending them whole. Remembered per
+  // notebook in this browser.
+  const retrievalStorageKey = `notebook-chat-retrieval:${notebookId}`
+  const [retrievalMode, setRetrievalModeState] = useState<boolean>(false)
+  const [retrievedPassages, setRetrievedPassages] = useState<number | null>(null)
+
+  useEffect(() => {
+    try {
+      setRetrievalModeState(window.localStorage.getItem(retrievalStorageKey) === 'true')
+    } catch {
+      // storage unavailable (private mode): keep the default
+    }
+  }, [retrievalStorageKey])
+
+  const setRetrievalMode = useCallback((enabled: boolean) => {
+    setRetrievalModeState(enabled)
+    setRetrievedPassages(null)
+    try {
+      window.localStorage.setItem(retrievalStorageKey, String(enabled))
+    } catch {
+      // ignore
+    }
+  }, [retrievalStorageKey])
 
   // Fetch sessions for this notebook
   const {
@@ -213,17 +237,33 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setIsSending(true)
 
     try {
-      // Build context and send message
-      const context = await buildContext()
+      // Retrieval mode: the server searches the included sources/notes, so
+      // the selected context is not built nor sent.
+      const retrieval = retrievalMode
+        ? {
+            enabled: true,
+            source_modes: Object.fromEntries(
+              sources
+                .map(source => [source.id, contextSelections.sources[source.id] ?? 'off'] as const)
+                .filter((entry): entry is readonly [string, 'insights' | 'full'] => entry[1] !== 'off')
+            ),
+            note_ids: notes
+              .filter(note => (contextSelections.notes[note.id] ?? 'off') !== 'off')
+              .map(note => note.id),
+          }
+        : undefined
+      const context = retrieval ? { sources: [], notes: [] } : await buildContext()
       const response = await chatApi.sendMessage({
         session_id: sessionId,
         message,
         context,
-        model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
+        model_override: modelOverride ?? (currentSession?.model_override ?? undefined),
+        retrieval
       })
 
       // Update messages with API response
       setMessages(response.messages)
+      setRetrievedPassages(response.retrieved_passages ?? null)
 
       // Refetch current session to get updated data
       await refetchCurrentSession()
@@ -242,6 +282,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     currentSession,
     pendingModelOverride,
     buildContext,
+    retrievalMode,
+    sources,
+    notes,
+    contextSelections,
     refetchCurrentSession,
     queryClient,
     t
@@ -310,6 +354,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     tokenCount,
     charCount,
     pendingModelOverride,
+    retrievalMode,
+    retrievedPassages,
 
     // Actions
     createSession,
@@ -318,6 +364,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     switchSession,
     sendMessage,
     setModelOverride,
+    setRetrievalMode,
     refetchSessions
   }
 }

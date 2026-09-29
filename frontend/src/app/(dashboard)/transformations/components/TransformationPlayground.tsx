@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { GroupedTransformationSelectItems } from '@/components/transformations/GroupedTransformationSelectItems'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Play, Loader2 } from 'lucide-react'
-import { Transformation } from '@/lib/types/transformations'
+import { Transformation, TransformationGroup } from '@/lib/types/transformations'
 import { useExecuteTransformation } from '@/lib/hooks/use-transformations'
 import { ModelSelector } from '@/components/common/ModelSelector'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -19,10 +20,11 @@ import rehypeKatex from 'rehype-katex'
 
 interface TransformationPlaygroundProps {
   transformations: Transformation[] | undefined
+  groups?: TransformationGroup[]
   selectedTransformation?: Transformation
 }
 
-export function TransformationPlayground({ transformations, selectedTransformation }: TransformationPlaygroundProps) {
+export function TransformationPlayground({ transformations, groups, selectedTransformation }: TransformationPlaygroundProps) {
   const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState(selectedTransformation?.id || '')
   const [inputText, setInputText] = useState('')
@@ -65,11 +67,7 @@ export function TransformationPlayground({ transformations, selectedTransformati
                   <SelectValue placeholder={t('transformations.selectToStart')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {transformations?.map((transformation) => (
-                    <SelectItem key={transformation.id} value={transformation.id}>
-                      {transformation.name}
-                    </SelectItem>
-                  ))}
+                  <GroupedTransformationSelectItems transformations={transformations} groups={groups} />
                 </SelectContent>
               </Select>
             </div>

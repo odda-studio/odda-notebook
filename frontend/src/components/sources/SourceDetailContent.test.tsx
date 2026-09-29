@@ -26,6 +26,12 @@ vi.mock('@/lib/api/transformations', () => ({
   },
 }))
 
+vi.mock('@/lib/api/transformation-groups', () => ({
+  transformationGroupsApi: {
+    list: vi.fn().mockResolvedValue([]),
+  },
+}))
+
 vi.mock('@/lib/api/embedding', () => ({
   embeddingApi: {
     embedSource: vi.fn(),

@@ -19,7 +19,7 @@ import { SourceTypeStep, parseAndValidateUrls } from './steps/SourceTypeStep'
 import { NotebooksStep } from './steps/NotebooksStep'
 import { ProcessingStep } from './steps/ProcessingStep'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import { useTransformations } from '@/lib/hooks/use-transformations'
+import { useTransformations, useTransformationGroups } from '@/lib/hooks/use-transformations'
 import { useCreateSource } from '@/lib/hooks/use-sources'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { CreateSourceRequest } from '@/lib/types/api'
@@ -136,6 +136,7 @@ export function AddSourceDialog({
   const importLinks = useImportLinks()
   const { data: notebooks = [], isLoading: notebooksLoading } = useNotebooks()
   const { data: transformations = [], isLoading: transformationsLoading } = useTransformations()
+  const { data: transformationGroups } = useTransformationGroups()
   const { data: settings } = useSettings()
 
   // Form setup
@@ -308,13 +309,6 @@ export function AddSourceDialog({
       ? selectedNotebooks.filter(id => id !== notebookId)
       : [...selectedNotebooks, notebookId]
     setSelectedNotebooks(updated)
-  }
-
-  const handleTransformationToggle = (transformationId: string) => {
-    const updated = selectedTransformations.includes(transformationId)
-      ? selectedTransformations.filter(id => id !== transformationId)
-      : [...selectedTransformations, transformationId]
-    setSelectedTransformations(updated)
   }
 
   // Single source submission
@@ -623,8 +617,9 @@ export function AddSourceDialog({
                 // @ts-expect-error - Type inference issue with zod schema
                 control={control}
                 transformations={transformations}
+                groups={transformationGroups}
                 selectedTransformations={selectedTransformations}
-                onToggleTransformation={handleTransformationToggle}
+                onTransformationsChange={setSelectedTransformations}
                 loading={transformationsLoading}
                 settings={settings}
                 showEmbeddingOptions={selectedType !== 'cloud'}

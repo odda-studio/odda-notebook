@@ -8,6 +8,9 @@ This is the single implementation behind:
 - the source-chat graph (`open_notebook/graphs/source_chat.py`) — assembles
   a single source plus its insights under a token budget, via
   :func:`build_source_context`.
+- the notebook chat in retrieval mode (``POST /api/chat/execute`` with
+  ``retrieval``) — only the passages most similar to the question, via
+  :func:`build_retrieval_context`.
 
 The inclusion config uses string matching on human-readable status values
 ("not in context", "insights", "full content"). That protocol is shared with
@@ -359,6 +362,155 @@ async def build_notebook_context(
                 continue
 
     return context_data, total_content
+
+
+RETRIEVAL_DEFAULT_PASSAGES = 12
+RETRIEVAL_MIN_SIMILARITY = 0.2
+# Candidates fetched per table before selection (similarity-ranked in the DB)
+RETRIEVAL_CANDIDATE_FACTOR = 4
+
+_CHUNK_QUERY = """
+    SELECT source AS parent, source.title AS title, content,
+        vector::similarity::cosine(embedding, $query) AS similarity
+    FROM source_embedding
+    WHERE source IN $sources AND embedding != NONE
+        AND array::len(embedding) = array::len($query)
+    ORDER BY similarity DESC LIMIT $limit
+"""
+_INSIGHT_QUERY = """
+    SELECT id, source AS parent, insight_type + ' - ' + (source.title OR '') AS title,
+        content, vector::similarity::cosine(embedding, $query) AS similarity
+    FROM source_insight
+    WHERE source IN $sources AND embedding != NONE
+        AND array::len(embedding) = array::len($query)
+    ORDER BY similarity DESC LIMIT $limit
+"""
+_NOTE_QUERY = """
+    SELECT id, id AS parent, title, content,
+        vector::similarity::cosine(embedding, $query) AS similarity
+    FROM note
+    WHERE id IN $notes AND embedding != NONE
+        AND array::len(embedding) = array::len($query)
+    ORDER BY similarity DESC LIMIT $limit
+"""
+
+
+def _select_passages(candidates: list[Dict[str, Any]], max_passages: int) -> list[Dict[str, Any]]:
+    """Most similar passages, but first the best one of every item.
+
+    Plain top-k lets raw text crowd everything else out (text chunks usually
+    score higher than insights, which are summaries), so every source's text,
+    every insight and every note first gets its best passage, then the
+    remaining slots go by similarity.
+    """
+    ranked = sorted(candidates, key=lambda c: -c["similarity"])
+    picked: list[Dict[str, Any]] = []
+    seen_items: set[str] = set()
+    for candidate in ranked:
+        if len(picked) >= max_passages:
+            break
+        if candidate["id"] not in seen_items:
+            seen_items.add(candidate["id"])
+            picked.append(candidate)
+    for candidate in ranked:
+        if len(picked) >= max_passages:
+            break
+        if candidate not in picked:
+            picked.append(candidate)
+    return sorted(picked, key=lambda c: -c["similarity"])
+
+
+async def build_retrieval_context(
+    notebook_id: str,
+    query: str,
+    *,
+    full_source_ids: list[str],
+    insight_source_ids: Optional[list[str]] = None,
+    note_ids: Optional[list[str]] = None,
+    max_passages: int = RETRIEVAL_DEFAULT_PASSAGES,
+    min_similarity: float = RETRIEVAL_MIN_SIMILARITY,
+) -> Tuple[Dict[str, Any], int]:
+    """Context made of the passages most similar to ``query``.
+
+    Honours each item's context level: sources in ``full_source_ids`` are
+    searched in their text chunks and insights, sources in
+    ``insight_source_ids`` in their insights only, notes in their content.
+    Only items linked to the notebook are searched. Similarity is computed per
+    passage. Returns the context in the same shape as
+    :func:`build_notebook_context` (so the chat prompt and citations work
+    unchanged) and the number of passages kept.
+    """
+    from open_notebook.database.repository import ensure_record_id, repo_query
+    from open_notebook.utils.embedding import generate_embedding
+
+    context_data: Dict[str, Any] = {"sources": [], "notes": []}
+    if not query.strip():
+        return context_data, 0
+
+    notebook = ensure_record_id(notebook_id)
+    in_notebook_sources = {
+        str(s) for s in await repo_query(
+            "SELECT VALUE in FROM reference WHERE out = $nb", {"nb": notebook}
+        )
+    }
+    in_notebook_notes = {
+        str(n) for n in await repo_query(
+            "SELECT VALUE in FROM artifact WHERE out = $nb", {"nb": notebook}
+        )
+    }
+    full = [i for i in (_ensure_prefix("source", x) for x in full_source_ids) if i in in_notebook_sources]
+    insight_only = [
+        i for i in (_ensure_prefix("source", x) for x in insight_source_ids or [])
+        if i in in_notebook_sources and i not in full
+    ]
+    notes = [i for i in (_ensure_prefix("note", x) for x in note_ids or []) if i in in_notebook_notes]
+    if not (full or insight_only or notes):
+        return context_data, 0
+
+    embedding = await generate_embedding(query)
+    limit = max_passages * RETRIEVAL_CANDIDATE_FACTOR
+    candidates: list[Dict[str, Any]] = []
+
+    async def fetch(sql: str, key: str, ids: list[str], kind: str) -> None:
+        if not ids:
+            return
+        rows = await repo_query(
+            sql,
+            {"query": embedding, key: [ensure_record_id(i) for i in ids], "limit": limit},
+        )
+        for row in rows:
+            similarity = float(row.get("similarity") or 0.0)
+            if similarity < min_similarity or not row.get("content"):
+                continue
+            candidates.append({
+                "kind": kind,
+                # chunks are cited by their source; insights and notes by their own id
+                "id": str(row["parent"]) if kind == "chunk" else str(row["id"]),
+                "parent": str(row["parent"]),
+                "title": row.get("title"),
+                "content": row["content"],
+                "similarity": similarity,
+            })
+
+    await fetch(_CHUNK_QUERY, "sources", full, "chunk")
+    await fetch(_INSIGHT_QUERY, "sources", full + insight_only, "insight")
+    await fetch(_NOTE_QUERY, "notes", notes, "note")
+
+    picked = _select_passages(candidates, max_passages)
+    entries: Dict[str, Dict[str, Any]] = {}
+    for passage in picked:  # most similar first
+        entry = entries.get(passage["id"])
+        if entry is None:
+            entry = entries[passage["id"]] = {
+                "id": passage["id"],
+                "title": passage["title"],
+                "similarity": round(passage["similarity"], 3),
+                "passages": [],
+            }
+            key = "notes" if passage["kind"] == "note" else "sources"
+            context_data[key].append(entry)
+        entry["passages"].append(passage["content"])
+    return context_data, len(picked)
 
 
 async def build_source_context(

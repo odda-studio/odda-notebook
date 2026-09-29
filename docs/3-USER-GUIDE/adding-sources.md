@@ -277,6 +277,15 @@ Results show:
   - Relevance score
 ```
 
+### Deleting Sources
+
+On the **all-Sources page** (`/sources`), each row has its own delete button. To clear out several at once:
+
+- **Select sources** — reveals a checkbox per row (and a header checkbox to select every row currently loaded); pick the ones to remove and click **Delete Selected**.
+- **Delete All Sources** — removes every source in the workspace, regardless of how many are loaded on screen. This is irreversible: it deletes the sources' text, insights and embeddings (and their files, if "auto delete files" is on). Cloud-synced sources you delete this way are not re-imported until the file changes remotely (see [Cloud Storage Sync](cloud-sync.md)).
+
+Both actions ask for confirmation before deleting anything, and report how many sources were removed.
+
 ---
 
 ## Context Management: How Sources Get Used

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { OddaMark } from '@/components/branding/OddaMark'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useAuthStore } from '@/lib/stores/auth-store'
@@ -141,6 +142,7 @@ export function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
+          <OddaMark className="mx-auto mb-2 size-12 rounded-md" />
           <CardTitle>{t('auth.loginTitle')}</CardTitle>
           <CardDescription>
             {t('auth.loginDesc')}

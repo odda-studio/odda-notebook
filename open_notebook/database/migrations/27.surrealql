@@ -1,0 +1,22 @@
+-- Migration 27: transformation groups (one level; a transformation belongs to
+-- at most one group, NONE = ungrouped).
+
+DEFINE TABLE IF NOT EXISTS transformation_group SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE transformation_group TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE transformation_group TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE transformation_group TYPE option<datetime> DEFAULT time::now();
+
+-- `group_id`, not `group`: GROUP is a SurrealQL keyword.
+DEFINE FIELD IF NOT EXISTS group_id ON TABLE transformation TYPE option<record<transformation_group>>;
+DEFINE INDEX IF NOT EXISTS idx_transformation_group_id ON TABLE transformation COLUMNS group_id;
+
+-- Deleting a group never leaves dangling references.
+DEFINE EVENT IF NOT EXISTS transformation_group_delete ON TABLE transformation_group WHEN ($after == NONE) THEN {
+    UPDATE transformation SET group_id = NONE WHERE group_id == $before.id;
+};
+
+-- A deleted transformation is dropped from the cloud-sync links that run it
+-- (process_source would otherwise fail permanently on the missing id).
+DEFINE EVENT IF NOT EXISTS transformation_delete_unlink ON TABLE transformation WHEN ($after == NONE) THEN {
+    UPDATE sync_link SET transformations = array::complement(transformations, [$before.id]) WHERE transformations CONTAINS $before.id;
+};

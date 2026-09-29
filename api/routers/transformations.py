@@ -13,7 +13,11 @@ from api.models import (
     TransformationUpdate,
 )
 from open_notebook.ai.models import Model
-from open_notebook.domain.transformation import DefaultPrompts, Transformation
+from open_notebook.domain.transformation import (
+    DefaultPrompts,
+    Transformation,
+    TransformationGroup,
+)
 from open_notebook.exceptions import InvalidInputError, OpenNotebookError
 from open_notebook.graphs.transformation import graph as transformation_graph
 
@@ -29,6 +33,7 @@ def _transformation_response(transformation: Transformation) -> TransformationRe
         prompt=transformation.prompt,
         apply_default=transformation.apply_default,
         model_id=transformation.model_id,
+        group_id=transformation.group_id,
         created=str(transformation.created),
         updated=str(transformation.updated),
     )
@@ -65,6 +70,8 @@ async def create_transformation(transformation_data: TransformationCreate):
             model = await Model.get(transformation_data.model_id)
             if not model:
                 raise HTTPException(status_code=404, detail="Model not found")
+        if transformation_data.group_id:
+            await TransformationGroup.get(transformation_data.group_id)  # 404 if missing
 
         new_transformation = Transformation(
             name=transformation_data.name,
@@ -73,6 +80,7 @@ async def create_transformation(transformation_data: TransformationCreate):
             prompt=transformation_data.prompt,
             apply_default=transformation_data.apply_default,
             model_id=transformation_data.model_id,
+            group_id=transformation_data.group_id,
         )
         await new_transformation.save()
 
@@ -234,6 +242,11 @@ async def update_transformation(
                 if not model:
                     raise HTTPException(status_code=404, detail="Model not found")
             transformation.model_id = transformation_update.model_id
+        if "group_id" in transformation_update.model_fields_set:
+            # Explicit null ungroups; a new group must exist.
+            if transformation_update.group_id:
+                await TransformationGroup.get(transformation_update.group_id)
+            transformation.group_id = transformation_update.group_id
 
         await transformation.save()
 
