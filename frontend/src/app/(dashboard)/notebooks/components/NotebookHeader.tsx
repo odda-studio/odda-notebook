@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Shuffle, Trash2 } from 'lucide-react'
 import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
+import { NotebookDefaultTransformationsDialog } from './NotebookDefaultTransformationsDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
@@ -20,6 +21,8 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
   const { t, language } = useTranslation()
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showDefaultsDialog, setShowDefaultsDialog] = useState(false)
+  const defaultCount = notebook.default_transformations?.length ?? 0
   
   const updateNotebook = useUpdateNotebook()
 
@@ -112,12 +115,31 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
             emptyText={t('notebooks.addDescription')}
           />
           
-          <div className="text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <button
+              type="button"
+              onClick={() => setShowDefaultsDialog(true)}
+              className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t('notebooks.defaultTransformationsDesc')}
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+              {defaultCount > 0
+                ? t('notebooks.defaultTransformationsCount', { count: defaultCount })
+                : t('notebooks.noDefaultTransformations')}
+            </button>
+            <span>
             {t('common.created', { time: formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }) })} • 
             {t('common.updated', { time: formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }) })}
+            </span>
           </div>
         </div>
       </div>
+
+      <NotebookDefaultTransformationsDialog
+        notebook={notebook}
+        open={showDefaultsDialog}
+        onOpenChange={setShowDefaultsDialog}
+      />
 
       <NotebookDeleteDialog
         open={showDeleteDialog}

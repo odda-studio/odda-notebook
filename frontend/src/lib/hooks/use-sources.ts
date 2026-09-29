@@ -306,8 +306,14 @@ export function useAddSourcesToNotebook() {
       // Count successes and failures
       const successes = results.filter(r => r.status === 'fulfilled').length
       const failures = results.filter(r => r.status === 'rejected').length
+      // Notebook default transformations the server queued for the sources
+      const appliedTransformations = results.reduce(
+        (sum, r) =>
+          r.status === 'fulfilled' ? sum + (r.value?.applied_transformations?.length ?? 0) : sum,
+        0
+      )
 
-      return { successes, failures, total: sourceIds.length }
+      return { successes, failures, total: sourceIds.length, appliedTransformations }
     },
     onSuccess: (result, { notebookId, sourceIds }) => {
       // Invalidate ALL sources queries to refresh all lists
@@ -336,6 +342,13 @@ export function useAddSourcesToNotebook() {
           title: t('common.success'),
           description: t('sources.partialAddSuccess', { success: result.successes.toString(), failed: result.failures.toString() }),
           variant: 'default',
+        })
+      }
+
+      if (result.appliedTransformations > 0) {
+        toast({
+          title: t('common.success'),
+          description: t('sources.defaultTransformationsQueued', { count: result.appliedTransformations }),
         })
       }
     },

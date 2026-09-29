@@ -30,6 +30,8 @@ interface ProcessingStepProps {
   settings?: SettingsResponse
   /** Cloud imports don't take a per-request embedding choice. */
   showEmbeddingOptions?: boolean
+  /** One-line note under the transformation picker (e.g. notebook defaults). */
+  transformationsHint?: string
 }
 
 export function ProcessingStep({
@@ -40,7 +42,8 @@ export function ProcessingStep({
   onTransformationsChange,
   loading = false,
   settings,
-  showEmbeddingOptions = true
+  showEmbeddingOptions = true,
+  transformationsHint,
 }: ProcessingStepProps) {
   const { t } = useTranslation()
 
@@ -58,6 +61,9 @@ export function ProcessingStep({
           loading={loading}
           emptyMessage={t('common.noMatches')}
         />
+        {transformationsHint && (
+          <p className="mt-2 text-xs text-muted-foreground">{transformationsHint}</p>
+        )}
       </FormSection>
 
       {showEmbeddingOptions && (

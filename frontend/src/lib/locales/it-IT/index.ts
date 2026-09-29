@@ -276,6 +276,11 @@ export const itIT = {
     recentlyViewedNotebook: "Area di lavoro",
     recentlyViewedSource: "Fonte",
     lastViewed: "Visto {{time}}",
+    defaultTransformations: "Trasformazioni predefinite",
+    defaultTransformationsDesc: "Queste trasformazioni vengono eseguite su ogni nuova fonte aggiunta a quest'area di lavoro (caricamento, link, testo, API e importazione dal cloud). Quando una fonte esistente viene aggiunta in seguito, vengono eseguite solo quelle che non ha ancora.",
+    defaultTransformationsCount: "{{count}} trasformazione/i predefinita/e",
+    noDefaultTransformations: "Nessuna trasformazione predefinita",
+    noTransformationsAvailable: "Nessuna trasformazione disponibile",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const itIT = {
     processingBatchSources: "Elaborazione di {{count}} fonti. Potrebbe richiedere qualche istante.",
     processingSource: "La tua fonte è in elaborazione. Potrebbe richiedere qualche istante.",
     maxFilesAllowed: "Massimo {{count}} file consentiti per batch",
+    notebookDefaultsPreselected: "Le trasformazioni predefinite delle aree di lavoro selezionate sono state preselezionate.",
+    cloudNotebookDefaultsHint: "Le trasformazioni predefinite delle aree di lavoro selezionate vengono applicate automaticamente ai file importati.",
+    defaultTransformationsQueued: "{{count}} trasformazione/i predefinita/e in coda",
   },
   chat: {
     sessions: "Sessioni",

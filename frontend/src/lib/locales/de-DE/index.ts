@@ -279,6 +279,11 @@ export const deDE = {
     recentlyViewedNotebook: "Notebook",
     recentlyViewedSource: "Quelle",
     lastViewed: "Angesehen {{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -456,6 +461,9 @@ export const deDE = {
     processingBatchSources: "{{count}} Quellen werden verarbeitet. Das kann einen Moment dauern.",
     processingSource: "Deine Quelle wird verarbeitet. Das kann einen Moment dauern.",
     maxFilesAllowed: "Maximal {{count}} Dateien pro Sammelimport erlaubt",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "Sitzungen",

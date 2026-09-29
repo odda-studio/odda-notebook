@@ -49,6 +49,7 @@ from open_notebook.integrations.base import StorageProvider, is_virtual
 from open_notebook.integrations.oauth_state import sign_state, verify_state
 from open_notebook.integrations.scheduler import enqueue_sync, scheduler_forced_off
 from open_notebook.integrations.tokens import get_valid_access_token
+from open_notebook.utils.notebook_transformations import apply_missing_notebook_defaults
 
 
 class ManagedByEnvironmentError(InvalidInputError):
@@ -409,6 +410,7 @@ async def _relink_source(source_id: str, add: List[str], remove: List[str]) -> N
             "DELETE reference WHERE in = $source AND out = $notebook",
             {"source": source, "notebook": ensure_record_id(notebook_id)},
         )
+    added: List[str] = []
     for notebook_id in add:
         existing = await repo_query(
             "SELECT id FROM reference WHERE in = $source AND out = $notebook",
@@ -419,6 +421,10 @@ async def _relink_source(source_id: str, add: List[str], remove: List[str]) -> N
                 "RELATE $source->reference->$notebook",
                 {"source": source, "notebook": ensure_record_id(notebook_id)},
             )
+            added.append(notebook_id)
+    if added:
+        # An existing source entering a notebook gets its missing defaults
+        await apply_missing_notebook_defaults(source_id, added)
 
 
 async def _relink_sources(link: SyncLink, add: List[str], remove: List[str]) -> int:

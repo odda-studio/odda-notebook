@@ -276,6 +276,11 @@ export const frFR = {
     recentlyViewedNotebook: "Carnet",
     recentlyViewedSource: "Source",
     lastViewed: "Consulté {{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const frFR = {
     processingBatchSources: "Traitement de {{count}} sources. Cela peut prendre quelques instants.",
     processingSource: "Votre source est en cours de traitement. Cela peut prendre quelques instants.",
     maxFilesAllowed: "Maximum {{count}} fichiers autorisés par lot",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "Sessions",

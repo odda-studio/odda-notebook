@@ -48,6 +48,10 @@ from open_notebook.integrations.base import (
 )
 from open_notebook.integrations.registry import get_provider
 from open_notebook.integrations.tokens import get_valid_access_token
+from open_notebook.utils.notebook_transformations import (
+    merge_transformation_ids,
+    notebook_default_transformations,
+)
 from open_notebook.utils.uploads import generate_unique_filename
 
 MAX_ERROR_LENGTH = 1000
@@ -235,6 +239,13 @@ class _LinkSync:
         self.delete_source_files = delete_source_files
         self.result = result
 
+    async def _transformations(self) -> List[str]:
+        """The link's transformations plus its notebooks' defaults."""
+        return merge_transformation_ids(
+            self.link.transformations,
+            await notebook_default_transformations(self.link.notebooks),
+        )
+
     def _mapping(self, remote: RemoteFile, existing: Optional[SyncedFile]) -> SyncedFile:
         if existing:
             return existing
@@ -281,7 +292,7 @@ class _LinkSync:
                 source,
                 dest,
                 self.link.notebooks,
-                self.link.transformations,
+                await self._transformations(),
                 self.delete_source_files,
             )
         except BaseException:
@@ -354,7 +365,7 @@ class _LinkSync:
             source,
             target,
             self.link.notebooks,
-            self.link.transformations,
+            await self._transformations(),
             self.delete_source_files,
         )
 

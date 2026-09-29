@@ -23,6 +23,8 @@ class Notebook(ObjectModel):
     description: str
     archived: Optional[bool] = False
     last_viewed_at: Optional[datetime] = None
+    # Transformations run on every source added to this notebook (migration 28)
+    default_transformations: List[str] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -30,6 +32,18 @@ class Notebook(ObjectModel):
         if not v.strip():
             raise InvalidInputError("Notebook name cannot be empty")
         return v
+
+    @field_validator("default_transformations", mode="before")
+    @classmethod
+    def _stringify_defaults(cls, value):
+        return [str(v) for v in value] if value else []
+
+    def _prepare_save_data(self) -> Dict[str, Any]:
+        data = super()._prepare_save_data()
+        data["default_transformations"] = [
+            ensure_record_id(t) for t in self.default_transformations
+        ]
+        return data
 
     async def get_sources(self, include_full_text: bool = False) -> List["Source"]:
         try:
@@ -579,7 +593,9 @@ class Source(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(e)
 
-    async def add_insight(self, insight_type: str, content: str) -> str:
+    async def add_insight(
+        self, insight_type: str, content: str, transformation_id: Optional[str] = None
+    ) -> str:
         """
         Submit insight creation as an async command (fire-and-forget).
 
@@ -621,6 +637,7 @@ class Source(ObjectModel):
                     "source_id": str(self.id),
                     "insight_type": insight_type,
                     "content": content,
+                    "transformation_id": transformation_id,
                 },
             )
             logger.info(

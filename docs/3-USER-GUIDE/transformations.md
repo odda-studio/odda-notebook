@@ -153,6 +153,26 @@ Bad: "Summarize this"
 6. One note per source created
 ```
 
+### Automatically: Notebook Default Transformations
+
+Each notebook can define **default transformations** (notebook header → *Default transformations*). They run on every source added to that notebook:
+
+- **New sources** — upload, link, text, the API and cloud-sync imports: the notebook's defaults are added to the transformations you chose (no duplicates). A source added to several notebooks gets the defaults of all of them. In **Add Source** they appear preselected, so you can untick one for that source.
+- **Existing sources** added to the notebook later (*Add existing source*, or a cloud file already imported elsewhere): only the defaults the source doesn't have yet are run, so insights are never duplicated.
+- Deleting a transformation removes it from every notebook's defaults.
+
+From the API, defaults are applied unless you opt out:
+
+```bash
+curl -X POST http://localhost:5055/api/sources/json \
+  -H "Content-Type: application/json" \
+  -d '{"type": "text", "content": "…", "notebooks": ["notebook:abc"],
+       "transformations": ["transformation:extra"],
+       "apply_notebook_defaults": true, "async_processing": true}'
+```
+
+`apply_notebook_defaults` (default `true`) is also accepted by the multipart `POST /api/sources` form and, as a query parameter, by `POST /api/notebooks/{notebook_id}/sources/{source_id}`. A notebook's defaults are set with `default_transformations` on `POST`/`PUT /api/notebooks`.
+
 ### Processing Time
 
 | Sources | Typical Time |

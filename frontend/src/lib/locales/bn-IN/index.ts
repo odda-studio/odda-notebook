@@ -276,6 +276,11 @@ export const bnIN = {
     recentlyViewedNotebook: "নোটবুক",
     recentlyViewedSource: "উৎস",
     lastViewed: "{{time}} দেখা হয়েছে",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const bnIN = {
     processingBatchSources: "{{count}}টি উৎস প্রক্রিয়াকরণ করা হচ্ছে। এটি কিছু মুহূর্ত সময় নিতে পারে।",
     processingSource: "আপনার উৎস প্রক্রিয়াকরণ করা হচ্ছে। এটি কিছু মুহূর্ত সময় নিতে পারে।",
     maxFilesAllowed: "ব্যাচে সর্বোচ্চ {{count}}টি ফাইল অনুমোদিত",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "সেশনগুলি",

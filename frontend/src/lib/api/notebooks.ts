@@ -6,6 +6,7 @@ import {
   UpdateNotebookRequest,
   NotebookDeletePreview,
   NotebookDeleteResponse,
+  AddSourceToNotebookResponse,
 } from '@/lib/types/api'
 
 export const notebooksApi = {
@@ -51,7 +52,11 @@ export const notebooksApi = {
   },
 
   addSource: async (notebookId: string, sourceId: string) => {
-    const response = await apiClient.post(`/notebooks/${notebookId}/sources/${sourceId}`)
+    // The server also queues the notebook's default transformations the
+    // source doesn't have yet (apply_notebook_defaults defaults to true).
+    const response = await apiClient.post<AddSourceToNotebookResponse>(
+      `/notebooks/${notebookId}/sources/${sourceId}`
+    )
     return response.data
   },
 

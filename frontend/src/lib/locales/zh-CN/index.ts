@@ -276,6 +276,11 @@ export const zhCN = {
     recentlyViewedNotebook: "笔记本",
     recentlyViewedSource: "来源",
     lastViewed: "查看于{{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const zhCN = {
     processingBatchSources: "正在处理 {{count}} 个来源，请稍候...",
     processingSource: "正在处理您的来源，请稍候...",
     maxFilesAllowed: "每批最多允许 {{count}} 个文件",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "会话",

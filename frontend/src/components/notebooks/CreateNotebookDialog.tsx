@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -18,6 +18,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { useCreateNotebook } from '@/lib/hooks/use-notebooks'
+import { useTransformations, useTransformationGroups } from '@/lib/hooks/use-transformations'
+import { GroupedTransformationPicker } from '@/components/transformations/GroupedTransformationPicker'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 const createNotebookSchema = z.object({
@@ -35,6 +37,9 @@ interface CreateNotebookDialogProps {
 export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialogProps) {
   const { t } = useTranslation()
   const createNotebook = useCreateNotebook()
+  const { data: transformations = [], isLoading: transformationsLoading } = useTransformations()
+  const { data: transformationGroups } = useTransformationGroups()
+  const [defaultTransformations, setDefaultTransformations] = useState<string[]>([])
   const {
     register,
     handleSubmit,
@@ -52,20 +57,22 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
   const closeDialog = () => onOpenChange(false)
 
   const onSubmit = async (data: CreateNotebookFormData) => {
-    await createNotebook.mutateAsync(data)
+    await createNotebook.mutateAsync({ ...data, default_transformations: defaultTransformations })
     closeDialog()
     reset()
+    setDefaultTransformations([])
   }
 
   useEffect(() => {
     if (!open) {
       reset()
+      setDefaultTransformations([])
     }
   }, [open, reset])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('notebooks.createNew')}</DialogTitle>
           <DialogDescription>
@@ -94,6 +101,21 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
               {...register('description')}
               placeholder={t('notebooks.descPlaceholder')}
               rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('notebooks.defaultTransformations')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t('notebooks.defaultTransformationsDesc')}
+            </p>
+            <GroupedTransformationPicker
+              transformations={transformations}
+              groups={transformationGroups}
+              selectedIds={defaultTransformations}
+              onChange={setDefaultTransformations}
+              loading={transformationsLoading}
+              emptyMessage={t('notebooks.noTransformationsAvailable')}
             />
           </div>
 

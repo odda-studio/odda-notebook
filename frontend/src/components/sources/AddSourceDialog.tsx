@@ -117,7 +117,12 @@ export function AddSourceDialog({
   const [selectedNotebooks, setSelectedNotebooks] = useState<string[]>(
     defaultNotebookId ? [defaultNotebookId] : []
   )
+  // Transformations picked by the user (or globally applied by default).
+  // The selected notebooks' defaults are layered on top, see
+  // `effectiveTransformations`.
   const [selectedTransformations, setSelectedTransformations] = useState<string[]>([])
+  // Notebook defaults the user explicitly unticked: they stay unticked.
+  const [excludedNotebookDefaults, setExcludedNotebookDefaults] = useState<string[]>([])
 
   // Batch-specific state
   const [urlValidationErrors, setUrlValidationErrors] = useState<{ url: string; line: number }[]>([])
@@ -190,6 +195,51 @@ export function AddSourceDialog({
   }, [])
 
   const selectedType = watch('type')
+  const isCloud = selectedType === 'cloud'
+
+  // Union of the selected notebooks' default transformations
+  const notebookDefaults = useMemo(() => {
+    const ids: string[] = []
+    for (const notebook of notebooks) {
+      if (!selectedNotebooks.includes(notebook.id)) continue
+      for (const id of notebook.default_transformations ?? []) {
+        if (!ids.includes(id)) ids.push(id)
+      }
+    }
+    return ids
+  }, [notebooks, selectedNotebooks])
+
+  // What the transformation step shows and what gets sent. Cloud imports
+  // apply notebook defaults server side, so they're not merged in here.
+  const effectiveTransformations = useMemo(() => {
+    if (isCloud) return selectedTransformations
+    const ids = [...selectedTransformations]
+    for (const id of notebookDefaults) {
+      if (!ids.includes(id) && !excludedNotebookDefaults.includes(id)) ids.push(id)
+    }
+    return ids
+  }, [isCloud, selectedTransformations, notebookDefaults, excludedNotebookDefaults])
+
+  const handleTransformationsChange = (ids: string[]) => {
+    if (isCloud) {
+      setSelectedTransformations(ids)
+      return
+    }
+    const next = new Set(ids)
+    // Remember unticked notebook defaults; re-ticking one forgets it
+    setExcludedNotebookDefaults(prev => {
+      const excluded = prev.filter(id => !next.has(id))
+      for (const id of notebookDefaults) {
+        if (!next.has(id) && !excluded.includes(id)) excluded.push(id)
+      }
+      return excluded
+    })
+    // Keep notebook defaults out of the manual list so they follow the
+    // notebook selection (unless the user had picked them independently)
+    setSelectedTransformations(prev =>
+      ids.filter(id => !notebookDefaults.includes(id) || prev.includes(id))
+    )
+  }
   const watchedUrl = watch('url')
   const watchedContent = watch('content')
   const watchedFile = watch('file')
@@ -321,7 +371,9 @@ export function AddSourceDialog({
       url: data.type === 'link' ? data.url : undefined,
       content: data.type === 'text' ? data.content : undefined,
       title: data.title,
-      transformations: selectedTransformations,
+      transformations: effectiveTransformations,
+      // Notebook defaults are already merged (and possibly unticked) above
+      apply_notebook_defaults: false,
       embed: data.embed,
       delete_source: false,
       async_processing: true,
@@ -371,7 +423,8 @@ export function AddSourceDialog({
           type: item.type === 'url' ? 'link' : 'upload',
           notebooks: selectedNotebooks,
           url: item.type === 'url' ? item.value as string : undefined,
-          transformations: selectedTransformations,
+          transformations: effectiveTransformations,
+          apply_notebook_defaults: false,
           embed: data.embed,
           delete_source: false,
           async_processing: true,
@@ -466,6 +519,7 @@ export function AddSourceDialog({
     setBatchProgress(null)
     setCloudSelection(EMPTY_CLOUD_PICKER_VALUE)
     setCloudOptions(emptyLinkFieldValues())
+    setExcludedNotebookDefaults([])
 
     // Reset to default transformations
     if (transformations.length > 0) {
@@ -618,11 +672,18 @@ export function AddSourceDialog({
                 control={control}
                 transformations={transformations}
                 groups={transformationGroups}
-                selectedTransformations={selectedTransformations}
-                onTransformationsChange={setSelectedTransformations}
+                selectedTransformations={effectiveTransformations}
+                onTransformationsChange={handleTransformationsChange}
                 loading={transformationsLoading}
                 settings={settings}
-                showEmbeddingOptions={selectedType !== 'cloud'}
+                showEmbeddingOptions={!isCloud}
+                transformationsHint={
+                  isCloud
+                    ? t('sources.cloudNotebookDefaultsHint')
+                    : notebookDefaults.length > 0
+                      ? t('sources.notebookDefaultsPreselected')
+                      : undefined
+                }
               />
             )}
           </WizardContainer>

@@ -276,6 +276,11 @@ export const zhTW = {
     recentlyViewedNotebook: "筆記本",
     recentlyViewedSource: "來源",
     lastViewed: "檢視於{{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const zhTW = {
     processingBatchSources: "正在處理 {{count}} 個來源，請稍候...",
     processingSource: "正在處理您的來源，請稍候...",
     maxFilesAllowed: "每批最多允許 {{count}} 個檔案",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "對話",

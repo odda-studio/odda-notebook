@@ -160,6 +160,8 @@ class CreateInsightInput(CommandInput):
     source_id: str
     insight_type: str
     content: str
+    # Transformation that produced it (None for manually created insights)
+    transformation_id: Optional[str] = None
 
 
 class CreateInsightOutput(CommandOutput):
@@ -439,13 +441,19 @@ async def create_insight_command(
             CREATE source_insight CONTENT {
                 "source": $source_id,
                 "insight_type": $insight_type,
-                "content": $content
+                "content": $content,
+                "transformation": $transformation
             };
             """,
             {
                 "source_id": ensure_record_id(input_data.source_id),
                 "insight_type": input_data.insight_type,
                 "content": input_data.content,
+                "transformation": (
+                    ensure_record_id(input_data.transformation_id)
+                    if input_data.transformation_id
+                    else None
+                ),
             },
         )
 

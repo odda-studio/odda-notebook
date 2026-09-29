@@ -15,21 +15,42 @@ vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 const importMutateAsync = vi.fn()
 const createMutateAsync = vi.fn()
 
+// Stable references, like react-query returns (the dialog resets its form
+// whenever settings / transformations change identity)
+const notebooksData = vi.hoisted(() => [
+  { id: 'notebook:1', name: 'Thesis', description: '', default_transformations: [] },
+  {
+    id: 'notebook:2',
+    name: 'Reading',
+    description: '',
+    default_transformations: ['transformation:summary', 'transformation:keypoints'],
+  },
+])
 vi.mock('@/lib/hooks/use-notebooks', () => ({
-  useNotebooks: () => ({
-    isLoading: false,
-    data: [
-      { id: 'notebook:1', name: 'Thesis', description: '' },
-      { id: 'notebook:2', name: 'Reading', description: '' },
-    ],
-  }),
+  useNotebooks: () => ({ isLoading: false, data: notebooksData }),
 }))
+
+const transformationFixture = (id: string, title: string) => ({
+  id,
+  name: title,
+  title,
+  description: '',
+  prompt: '',
+  apply_default: false,
+  model_id: null,
+  group_id: null,
+  created: '',
+  updated: '',
+})
+let transformationsData: ReturnType<typeof transformationFixture>[] = []
+
 vi.mock('@/lib/hooks/use-transformations', () => ({
-  useTransformations: () => ({ isLoading: false, data: [] }),
+  useTransformations: () => ({ isLoading: false, data: transformationsData }),
   useTransformationGroups: () => ({ isLoading: false, data: [] }),
 }))
+const settingsData = { default_embedding_option: 'ask' }
 vi.mock('@/lib/hooks/use-settings', () => ({
-  useSettings: () => ({ data: { default_embedding_option: 'ask' } }),
+  useSettings: () => ({ data: settingsData }),
 }))
 vi.mock('@/lib/hooks/use-sources', () => ({
   useCreateSource: () => ({ isPending: false, mutateAsync: createMutateAsync }),
@@ -65,6 +86,7 @@ vi.mock('@/components/integrations/CloudImportPanel', async importOriginal => {
 
 describe('AddSourceDialog — Cloud', () => {
   beforeEach(() => {
+    transformationsData = []
     importMutateAsync.mockReset().mockResolvedValue({ links: [], reused_sources: 0 })
     createMutateAsync.mockReset()
   })
@@ -89,6 +111,7 @@ describe('AddSourceDialog — Cloud', () => {
 
     // Processing step: embedding choice doesn't apply to cloud imports
     expect(screen.queryByText('sources.enableEmbedding')).not.toBeInTheDocument()
+    expect(screen.getByText('sources.cloudNotebookDefaultsHint')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'common.done' }))
 
     await waitFor(() => expect(importMutateAsync).toHaveBeenCalledTimes(1))
@@ -98,6 +121,7 @@ describe('AddSourceDialog — Cloud', () => {
         notebook_ids: ['notebook:1', 'notebook:2'],
         sync_enabled: true,
         recursive: true,
+        // Cloud imports apply the notebooks' defaults server side
         transformations: [],
         items: [
           { kind: 'folder', remote_id: 'id:folder', remote_path: '/Research', name: 'Research' },
@@ -125,5 +149,73 @@ describe('AddSourceDialog — Cloud', () => {
       expect.objectContaining({ type: 'text', content: 'Hello', title: 'Note', notebooks: [] })
     )
     expect(importMutateAsync).not.toHaveBeenCalled()
+  })
+})
+
+describe('AddSourceDialog — notebook default transformations', () => {
+  beforeEach(() => {
+    transformationsData = [
+      transformationFixture('transformation:summary', 'Summary'),
+      transformationFixture('transformation:keypoints', 'Key points'),
+      transformationFixture('transformation:other', 'Other'),
+    ]
+    importMutateAsync.mockReset()
+    createMutateAsync.mockReset().mockResolvedValue({})
+  })
+
+  it('preselects the selected notebooks\' defaults and sends the explicit list', async () => {
+    render(<AddSourceDialog open onOpenChange={vi.fn()} defaultNotebookId="notebook:1" />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /sources.enterText/ }), { button: 0 })
+    fireEvent.change(screen.getByLabelText('sources.textContentLabel'), {
+      target: { value: 'Hello' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('sources.titlePlaceholder'), {
+      target: { value: 'Note' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+
+    // Selecting a notebook adds its defaults
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Reading' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+
+    expect(screen.getByText('sources.notebookDefaultsPreselected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Summary' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Key points' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Other' })).not.toBeChecked()
+
+    // Unticking a default keeps it unticked; a manual pick is added
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Key points' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Other' }))
+    expect(screen.getByRole('checkbox', { name: 'Key points' })).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.done' }))
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalledTimes(1))
+    const request = createMutateAsync.mock.calls[0][0]
+    expect(request).toMatchObject({
+      type: 'text',
+      notebooks: ['notebook:1', 'notebook:2'],
+      apply_notebook_defaults: false,
+    })
+    expect([...request.transformations].sort()).toEqual([
+      'transformation:other',
+      'transformation:summary',
+    ])
+  })
+
+  it('does not show the hint when the selected notebooks have no defaults', () => {
+    render(<AddSourceDialog open onOpenChange={vi.fn()} defaultNotebookId="notebook:1" />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /sources.enterText/ }), { button: 0 })
+    fireEvent.change(screen.getByLabelText('sources.textContentLabel'), {
+      target: { value: 'Hello' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('sources.titlePlaceholder'), {
+      target: { value: 'Note' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.next' }))
+
+    expect(screen.queryByText('sources.notebookDefaultsPreselected')).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Summary' })).not.toBeChecked()
   })
 })

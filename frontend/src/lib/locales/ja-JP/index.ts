@@ -276,6 +276,11 @@ export const jaJP = {
     recentlyViewedNotebook: "ノートブック",
     recentlyViewedSource: "ソース",
     lastViewed: "{{time}}に表示",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const jaJP = {
     processingBatchSources: "{{count}}件のソースを処理中。しばらくお待ちください。",
     processingSource: "ソースを処理中です。しばらくお待ちください。",
     maxFilesAllowed: "一括処理は最大{{count}}件までです",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "セッション",

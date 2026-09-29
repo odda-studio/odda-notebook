@@ -45,6 +45,10 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
+from open_notebook.utils.notebook_transformations import (
+    merge_transformation_ids,
+    notebook_default_transformations,
+)
 from open_notebook.utils.uploads import generate_unique_filename
 
 router = APIRouter()
@@ -153,6 +157,7 @@ def parse_source_form_data(
     content: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     transformations: Optional[str] = Form(None),  # JSON string of transformation IDs
+    apply_notebook_defaults: str = Form("true"),  # Accept as string, convert to bool
     embed: str = Form("false"),  # Accept as string, convert to bool
     delete_source: str = Form("false"),  # Accept as string, convert to bool
     async_processing: str = Form("false"),  # Accept as string, convert to bool
@@ -201,6 +206,7 @@ def parse_source_form_data(
             title=title,
             file_path=None,  # Will be set later if file is uploaded
             transformations=transformations_list,
+            apply_notebook_defaults=str_to_bool(apply_notebook_defaults),
             embed=embed_bool,
             delete_source=delete_source_bool,
             async_processing=async_processing_bool,
@@ -690,8 +696,15 @@ async def create_source(
         # Prepare content_state for processing (type validation + SSRF/LFI guards)
         content_state = await _build_content_state(source_data, file_path)
 
-        # Validate transformations exist
+        # Explicit transformations plus the target notebooks' defaults
         transformation_ids = source_data.transformations or []
+        if source_data.apply_notebook_defaults:
+            transformation_ids = merge_transformation_ids(
+                transformation_ids,
+                await notebook_default_transformations(source_data.notebooks or []),
+            )
+
+        # Validate transformations exist
         for trans_id in transformation_ids:
             transformation = await Transformation.get(trans_id)
             if not transformation:

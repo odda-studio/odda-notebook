@@ -7,6 +7,8 @@ export interface NotebookResponse {
   updated: string
   source_count: number
   note_count: number
+  /** Transformation ids run on every source added to this notebook */
+  default_transformations: string[]
 }
 
 export interface NoteResponse {
@@ -87,12 +89,22 @@ export interface Capabilities {
 export interface CreateNotebookRequest {
   name: string
   description?: string
+  /** Transformation ids run on every source added to this notebook (max 50) */
+  default_transformations?: string[]
 }
 
 export interface UpdateNotebookRequest {
   name?: string
   description?: string
   archived?: boolean
+  /** Omit to keep unchanged, `[]` clears (max 50) */
+  default_transformations?: string[]
+}
+
+export interface AddSourceToNotebookResponse {
+  message: string
+  /** Notebook default transformations queued for the source */
+  applied_transformations: string[]
 }
 
 export interface NotebookDeletePreview {
@@ -129,6 +141,12 @@ export interface CreateSourceRequest {
   content?: string
   title?: string
   transformations?: string[]
+  /**
+   * Merge the target notebooks' default transformations into
+   * `transformations` server side (default true). Send false when the list
+   * already contains the defaults the user kept.
+   */
+  apply_notebook_defaults?: boolean
   embed?: boolean
   delete_source?: boolean
   // New async processing support

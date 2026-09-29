@@ -58,7 +58,7 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
         cleaned_content = clean_thinking_content(response_content)
 
         if source:
-            await source.add_insight(transformation.title, cleaned_content)
+            await source.add_insight(transformation.title, cleaned_content, transformation.id)
 
         return {
             "output": cleaned_content,

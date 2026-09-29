@@ -13,13 +13,27 @@ from api.models import (
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
+from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import (
     InvalidInputError,
     NotFoundError,
     OpenNotebookError,
 )
+from open_notebook.utils.notebook_transformations import (
+    apply_missing_notebook_defaults,
+)
 
 router = APIRouter()
+
+
+async def _validated_transformations(ids: List[str]) -> List[str]:
+    """Existing transformation ids, deduplicated (NotFoundError -> 404)."""
+    validated: List[str] = []
+    for transformation_id in ids:
+        transformation = await Transformation.get(transformation_id)
+        if str(transformation.id) not in validated:
+            validated.append(str(transformation.id))
+    return validated
 
 
 def _last_viewed_sort_key(item: RecentlyViewedResponse) -> str:
@@ -115,6 +129,9 @@ async def get_notebooks(
                 updated=str(nb.get("updated", "")),
                 source_count=nb.get("source_count", 0),
                 note_count=nb.get("note_count", 0),
+                default_transformations=[
+                    str(t) for t in nb.get("default_transformations") or []
+                ],
             )
             for nb in result
         ]
@@ -136,6 +153,9 @@ async def create_notebook(notebook: NotebookCreate):
         new_notebook = Notebook(
             name=notebook.name,
             description=notebook.description,
+            default_transformations=await _validated_transformations(
+                notebook.default_transformations
+            ),
         )
         await new_notebook.save()
 
@@ -148,6 +168,7 @@ async def create_notebook(notebook: NotebookCreate):
             updated=str(new_notebook.updated),
             source_count=0,  # New notebook has no sources
             note_count=0,  # New notebook has no notes
+            default_transformations=new_notebook.default_transformations,
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -267,6 +288,9 @@ async def get_notebook(notebook_id: str):
             updated=str(nb.get("updated", "")),
             source_count=nb.get("source_count", 0),
             note_count=nb.get("note_count", 0),
+            default_transformations=[
+                str(t) for t in nb.get("default_transformations") or []
+            ],
         )
     except HTTPException:
         raise
@@ -292,6 +316,10 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             notebook.description = notebook_update.description
         if notebook_update.archived is not None:
             notebook.archived = notebook_update.archived
+        if notebook_update.default_transformations is not None:
+            notebook.default_transformations = await _validated_transformations(
+                notebook_update.default_transformations
+            )
 
         await notebook.save()
 
@@ -315,6 +343,9 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
                 updated=str(nb.get("updated", "")),
                 source_count=nb.get("source_count", 0),
                 note_count=nb.get("note_count", 0),
+                default_transformations=[
+                    str(t) for t in nb.get("default_transformations") or []
+                ],
             )
 
         # Fallback if query fails
@@ -327,6 +358,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             updated=str(notebook.updated),
             source_count=0,
             note_count=0,
+            default_transformations=notebook.default_transformations,
         )
     except HTTPException:
         raise
@@ -344,16 +376,24 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
-async def add_source_to_notebook(notebook_id: str, source_id: str):
+async def add_source_to_notebook(
+    notebook_id: str,
+    source_id: str,
+    apply_notebook_defaults: bool = Query(
+        True,
+        description="Run the notebook's default transformations the source doesn't have yet",
+    ),
+):
     """Add an existing source to a notebook (create the reference)."""
     try:
         # Verify the notebook and source exist (raises NotFoundError -> 404)
         await Notebook.get(notebook_id)
         await Source.get(source_id)
 
-        # Check if reference already exists (idempotency)
+        # Check if reference already exists (idempotency). The edge is
+        # source->reference->notebook: `in` is the source, `out` the notebook.
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE in = $source_id AND out = $notebook_id",
             {
                 "notebook_id": ensure_record_id(notebook_id),
                 "source_id": ensure_record_id(source_id),
@@ -361,6 +401,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         )
 
         # If reference doesn't exist, create it
+        applied: List[str] = []
         if not existing_ref:
             await repo_query(
                 "RELATE $source_id->reference->$notebook_id",
@@ -369,8 +410,13 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
                     "source_id": ensure_record_id(source_id),
                 },
             )
+            if apply_notebook_defaults:
+                applied = await apply_missing_notebook_defaults(source_id, [notebook_id])
 
-        return {"message": "Source linked to notebook successfully"}
+        return {
+            "message": "Source linked to notebook successfully",
+            "applied_transformations": applied,
+        }
     except HTTPException:
         raise
     except NotFoundError:

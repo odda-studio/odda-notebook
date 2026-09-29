@@ -57,6 +57,9 @@ export const sourcesApi = {
     if (data.transformations !== undefined) {
       formData.append('transformations', JSON.stringify(data.transformations))
     }
+    if (data.apply_notebook_defaults !== undefined) {
+      formData.append('apply_notebook_defaults', String(data.apply_notebook_defaults))
+    }
     
     const dataWithFile = data as CreateSourceRequest & { file?: File }
     if (dataWithFile.file instanceof File) {

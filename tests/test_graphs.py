@@ -600,6 +600,7 @@ class TestTransformationModelIdForwarding:
         mock_source.add_insight = AsyncMock()
 
         transformation = MagicMock(spec=Transformation)
+        transformation.id = "transformation:1"
         transformation.name = "summary"
         transformation.title = "Summary"
         transformation.model_id = "model:custom"
@@ -628,6 +629,7 @@ class TestTransformationModelIdForwarding:
         mock_source.add_insight = AsyncMock()
 
         transformation = MagicMock(spec=Transformation)
+        transformation.id = "transformation:1"
         transformation.name = "summary"
         transformation.title = "Summary"
         transformation.model_id = None
@@ -656,6 +658,7 @@ class TestTransformationModelIdForwarding:
         mock_source_get.return_value = MagicMock(spec=Source)
 
         transformation = MagicMock(spec=Transformation)
+        transformation.id = "transformation:1"
         transformation.model_id = "model:custom"
         mock_transformation_get.return_value = transformation
 

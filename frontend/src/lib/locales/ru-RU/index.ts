@@ -276,6 +276,11 @@ export const ruRU = {
     recentlyViewedNotebook: "Блокнот",
     recentlyViewedSource: "Источник",
     lastViewed: "Просмотрено {{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const ruRU = {
     processingBatchSources: "Обработка источников: {{count}}. Это может занять некоторое время.",
     processingSource: "Источник обрабатывается. Это может занять некоторое время.",
     maxFilesAllowed: "Максимальное количество файлов в пакете: {{count}}",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "Сессии",

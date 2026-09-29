@@ -1,0 +1,5 @@
+-- Rollback Migration 28: remove notebook default transformations
+
+REMOVE EVENT IF EXISTS transformation_delete_notebook_defaults ON TABLE transformation;
+REMOVE FIELD IF EXISTS transformation ON TABLE source_insight;
+REMOVE FIELD IF EXISTS default_transformations ON TABLE notebook;

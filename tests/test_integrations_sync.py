@@ -640,6 +640,8 @@ class TestUpdateInPlace:
             patch.object(sync, "repo_query", AsyncMock()) as query,
             patch.object(sync, "_submit_processing", AsyncMock(return_value="command:1")) as submit,
             patch.object(sync.SyncedFile, "save", AsyncMock()),
+            patch.object(sync, "notebook_default_transformations",
+                         AsyncMock(return_value=["transformation:default"])),
         ):
             await runner.update_changed(remote(name="report-v2.pdf", revision="r2"), synced)
 
@@ -648,6 +650,9 @@ class TestUpdateInPlace:
         assert query.await_args and "DELETE source_insight" in query.await_args.args[0]
         assert source.title == "report-v2.pdf"
         submit.assert_awaited_once()
+        # link transformations + the notebooks' default ones
+        assert submit.await_args is not None
+        assert submit.await_args.args[3] == ["transformation:default"]
         assert synced.remote_revision == "r2" and synced.status == "synced"
         assert result.updated == 1
 

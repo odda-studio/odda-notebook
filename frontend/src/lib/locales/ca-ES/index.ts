@@ -276,6 +276,11 @@ export const caES = {
     recentlyViewedNotebook: "Quadern",
     recentlyViewedSource: "Font",
     lastViewed: "Vist {{time}}",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const caES = {
     processingBatchSources: "S'estan processant {{count}} fonts. Això pot trigar uns moments.",
     processingSource: "S'està processant la teva font. Això pot trigar uns moments.",
     maxFilesAllowed: "Màxim {{count}} fitxers per lot",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "Sessions",

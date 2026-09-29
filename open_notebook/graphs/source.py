@@ -268,7 +268,7 @@ async def transform_content(state: TransformationState) -> Optional[dict]:
         dict(input_text=content, transformation=transformation),
         config=RunnableConfig(configurable={"model_id": transformation.model_id}),
     )
-    await source.add_insight(transformation.title, result["output"])
+    await source.add_insight(transformation.title, result["output"], transformation.id)
     return {
         "transformation": [
             {

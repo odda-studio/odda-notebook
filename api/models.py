@@ -7,6 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class NotebookCreate(BaseModel):
     name: str = Field(..., description="Name of the notebook")
     description: str = Field(default="", description="Description of the notebook")
+    default_transformations: List[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Transformations run on every source added to this notebook",
+    )
 
 
 class NotebookUpdate(BaseModel):
@@ -14,6 +19,11 @@ class NotebookUpdate(BaseModel):
     description: Optional[str] = Field(None, description="Description of the notebook")
     archived: Optional[bool] = Field(
         None, description="Whether the notebook is archived"
+    )
+    default_transformations: Optional[List[str]] = Field(
+        None,
+        max_length=50,
+        description="Transformations run on every source added to this notebook",
     )
 
 
@@ -26,6 +36,7 @@ class NotebookResponse(BaseModel):
     updated: str
     source_count: int
     note_count: int
+    default_transformations: List[str] = Field(default_factory=list)
 
 
 class RecentlyViewedResponse(BaseModel):
@@ -383,6 +394,13 @@ class SourceCreate(BaseModel):
         default_factory=list,
         max_length=50,
         description="Transformation IDs to apply (max 50)",
+    )
+    apply_notebook_defaults: bool = Field(
+        True,
+        description=(
+            "Also run the default transformations of the target notebooks "
+            "(merged with `transformations`, without duplicates)"
+        ),
     )
     embed: bool = Field(False, description="Whether to embed content for vector search")
     delete_source: bool = Field(

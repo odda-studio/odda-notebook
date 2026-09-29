@@ -276,6 +276,11 @@ export const trTR = {
     recentlyViewedNotebook: "Defter",
     recentlyViewedSource: "Kaynak",
     lastViewed: "{{time}} görüntülendi",
+    defaultTransformations: "Default transformations",
+    defaultTransformationsDesc: "These transformations run on every new source added to this notebook (upload, link, text, API and cloud import). When an existing source is added later, only the ones it doesn't have yet are run.",
+    defaultTransformationsCount: "{{count}} default transformation(s)",
+    noDefaultTransformations: "No default transformations",
+    noTransformationsAvailable: "No transformations available",
   },
   sources: {
     cloudStorage: "Cloud",
@@ -453,6 +458,9 @@ export const trTR = {
     processingBatchSources: "{{count}} kaynak işleniyor. Bu birkaç dakika sürebilir.",
     processingSource: "Kaynağınız işleniyor. Bu birkaç dakika sürebilir.",
     maxFilesAllowed: "Toplu işlem başına en fazla {{count}} dosya",
+    notebookDefaultsPreselected: "The default transformations of the selected notebooks have been preselected.",
+    cloudNotebookDefaultsHint: "The default transformations of the selected notebooks are applied automatically to imported files.",
+    defaultTransformationsQueued: "{{count}} default transformation(s) queued",
   },
   chat: {
     sessions: "Oturumlar",

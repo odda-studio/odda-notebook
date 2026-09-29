@@ -1,0 +1,14 @@
+-- Migration 28: notebook default transformations
+-- A notebook can list transformations to run on every source added to it
+-- (new sources, and existing sources linked to it - only the missing ones).
+
+DEFINE FIELD IF NOT EXISTS default_transformations ON TABLE notebook TYPE option<array<record<transformation>>>;
+
+-- Which transformation produced an insight, so "missing" defaults can be
+-- detected reliably (older insights only have their title in insight_type).
+DEFINE FIELD IF NOT EXISTS transformation ON TABLE source_insight TYPE option<record<transformation>>;
+
+-- A deleted transformation is dropped from notebook defaults.
+DEFINE EVENT IF NOT EXISTS transformation_delete_notebook_defaults ON TABLE transformation WHEN ($after == NONE) THEN {
+    UPDATE notebook SET default_transformations = array::complement(default_transformations, [$before.id]) WHERE default_transformations CONTAINS $before.id;
+};
