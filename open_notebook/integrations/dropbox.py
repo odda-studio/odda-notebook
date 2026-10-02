@@ -234,6 +234,31 @@ class DropboxProvider(StorageProvider):
             ] + folders
         return path, folders, files
 
+    async def search(
+        self, access_token: str, query: str, export_formats: Dict[str, str], limit: int
+    ) -> Tuple[List[RemoteFolder], List[RemoteFile], bool]:
+        data = await self._rpc(
+            access_token,
+            "files/search_v2",
+            {
+                "query": query,
+                "options": {
+                    "max_results": min(limit, 1000),
+                    "file_status": "active",
+                    "filename_only": True,
+                },
+            },
+        )
+        folders: List[RemoteFolder] = []
+        files: List[RemoteFile] = []
+        for match in data.get("matches", []):
+            entry = (match.get("metadata") or {}).get("metadata") or {}
+            if entry.get(".tag") == "folder":
+                folders.append(_folder(entry))
+            elif _is_file(entry):
+                files.append(_file(entry))
+        return folders, files, bool(data.get("has_more"))
+
     async def get_file(
         self, access_token: str, file_id: str, export_formats: Dict[str, str]
     ) -> Optional[RemoteFile]:

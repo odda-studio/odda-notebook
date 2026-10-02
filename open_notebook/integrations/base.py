@@ -168,6 +168,13 @@ class StorageProvider(ABC):
         """(path of the parent, its sub-folders, its files) - for the picker."""
 
     @abstractmethod
+    async def search(
+        self, access_token: str, query: str, export_formats: Dict[str, str], limit: int
+    ) -> Tuple[List[RemoteFolder], List[RemoteFile], bool]:
+        """Folders and files whose name matches ``query`` anywhere in the
+        account (up to ``limit``), and whether more results were left out."""
+
+    @abstractmethod
     async def get_file(
         self, access_token: str, file_id: str, export_formats: Dict[str, str]
     ) -> Optional[RemoteFile]:

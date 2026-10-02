@@ -4,6 +4,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { usePathname } from 'next/navigation'
 import { AppSidebar } from './AppSidebar'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
+import { useActivitySummary } from '@/lib/hooks/use-activity'
+
+vi.mock('@/lib/hooks/use-activity', () => ({
+  useActivitySummary: vi.fn(() => ({ data: undefined })),
+}))
+
+const mockSummary = (counts: { active: number; queued: number; running: number; failed_recent: number }) =>
+  vi.mocked(useActivitySummary).mockReturnValue({ data: counts } as any)
 
 // Mock Tooltip components to avoid Radix UI async issues in tests
 vi.mock('@/components/ui/tooltip', () => ({
@@ -16,6 +24,49 @@ vi.mock('@/components/ui/tooltip', () => ({
 describe('AppSidebar', () => {
   afterEach(() => {
     vi.mocked(usePathname).mockReturnValue('')
+    vi.mocked(useActivitySummary).mockReturnValue({ data: undefined } as any)
+  })
+
+  it('shows the active job count on the Activity entry', () => {
+    mockSummary({ active: 3, queued: 1, running: 2, failed_recent: 0 })
+
+    const { container } = render(<AppSidebar />)
+
+    const activityLink = container.querySelector('a[href="/activity"]')
+    expect(activityLink).not.toBeNull()
+    expect(screen.getByTestId('activity-badge').textContent).toBe('3')
+    expect(screen.queryByTestId('activity-failed-dot')).toBeNull()
+  })
+
+  it('shows a failure dot instead of a badge when nothing is active', () => {
+    mockSummary({ active: 0, queued: 0, running: 0, failed_recent: 2 })
+
+    render(<AppSidebar />)
+
+    expect(screen.queryByTestId('activity-badge')).toBeNull()
+    expect(screen.getByTestId('activity-failed-dot')).toBeDefined()
+  })
+
+  it('keeps the active badge visible when the sidebar is collapsed', () => {
+    mockSummary({ active: 5, queued: 5, running: 0, failed_recent: 0 })
+    vi.mocked(useSidebarStore).mockReturnValueOnce({
+      isCollapsed: true,
+      toggleCollapse: vi.fn(),
+    } as any)
+
+    render(<AppSidebar />)
+
+    expect(screen.getByTestId('activity-badge').textContent).toBe('5')
+  })
+
+  it('hides the indicator when there is no activity', () => {
+    mockSummary({ active: 0, queued: 0, running: 0, failed_recent: 0 })
+
+    render(<AppSidebar />)
+
+    expect(screen.getByText('navigation.activity')).toBeDefined()
+    expect(screen.queryByTestId('activity-badge')).toBeNull()
+    expect(screen.queryByTestId('activity-failed-dot')).toBeNull()
   })
 
   it('highlights only Models (not Settings) on the Models page', () => {

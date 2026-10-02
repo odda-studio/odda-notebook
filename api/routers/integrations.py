@@ -27,6 +27,7 @@ from api.models import (
     IntegrationSettingsUpdate,
     LinkImportRequest,
     LinkImportResponse,
+    RemoteSearchResponse,
     SourceCloudInfoResponse,
     SourceSyncUpdate,
     SyncedFileExcludeRequest,
@@ -116,6 +117,15 @@ async def list_accounts():
 async def delete_account(account_id: str):
     await service.delete_account(account_id)
     return IntegrationMessageResponse(message="Account disconnected")
+
+
+@router.get("/accounts/{account_id}/search", response_model=RemoteSearchResponse)
+async def search_remote(
+    account_id: str,
+    q: str = Query(..., max_length=200, description="Text to match in file/folder names"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    return await service.search_remote(account_id, q, limit)
 
 
 @router.get("/accounts/{account_id}/browse", response_model=BrowseResponse)

@@ -23,6 +23,7 @@ from api.models import (
     LinkImportRequest,
     LinkImportResponse,
     RemoteItemResponse,
+    RemoteSearchResponse,
     SourceCloudInfoResponse,
     SyncedFileResponse,
     SyncLinkResponse,
@@ -287,14 +288,8 @@ async def _connect(account: IntegrationAccount) -> Tuple[StorageProvider, str]:
     return connector, await get_valid_access_token(account, connector)
 
 
-async def browse(account_id: str, parent_id: Optional[str]) -> BrowseResponse:
-    account = await IntegrationAccount.get(account_id)
-    connector, token = await _connect(account)
-    settings = await IntegrationSettings.load_fresh()
-    path, folders, files = await connector.list_children(
-        token, parent_id, settings.google_export_formats
-    )
-    items = [
+def _remote_items(folders, files, settings: IntegrationSettings) -> List[RemoteItemResponse]:
+    return [
         RemoteItemResponse(
             id=f.id, name=f.name, path=f.path, kind="folder", web_url=f.web_url,
             selectable=f.selectable,
@@ -315,11 +310,40 @@ async def browse(account_id: str, parent_id: Optional[str]) -> BrowseResponse:
         )
         for f in files
     ]
+
+
+async def browse(account_id: str, parent_id: Optional[str]) -> BrowseResponse:
+    account = await IntegrationAccount.get(account_id)
+    connector, token = await _connect(account)
+    settings = await IntegrationSettings.load_fresh()
+    path, folders, files = await connector.list_children(
+        token, parent_id, settings.google_export_formats
+    )
+    items = _remote_items(folders, files, settings)
     return BrowseResponse(
         parent_id=parent_id or connector.root_folder_id,
         path=path,
         selectable=not is_virtual(parent_id),
         items=items,
+    )
+
+
+SEARCH_MIN_LENGTH = 2
+
+
+async def search_remote(account_id: str, query: str, limit: int) -> RemoteSearchResponse:
+    """Files and folders matching ``query`` by name anywhere in the account."""
+    query = query.strip()
+    if len(query) < SEARCH_MIN_LENGTH:
+        raise InvalidInputError(f"Type at least {SEARCH_MIN_LENGTH} characters to search")
+    account = await IntegrationAccount.get(account_id)
+    connector, token = await _connect(account)
+    settings = await IntegrationSettings.load_fresh()
+    folders, files, truncated = await connector.search(
+        token, query, settings.google_export_formats, limit
+    )
+    return RemoteSearchResponse(
+        query=query, items=_remote_items(folders, files, settings), truncated=truncated
     )
 
 

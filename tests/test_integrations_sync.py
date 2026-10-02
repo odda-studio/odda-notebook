@@ -742,3 +742,57 @@ class TestIntegrationsApi:
 
 def test_env_does_not_leak_between_tests():
     assert os.environ.get("DROPBOX_APP_SECRET") != "super-secret"
+
+
+class TestSearch:
+    @pytest.mark.asyncio
+    async def test_drive_search_by_name_with_paths(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/files"):
+                seen.append(request.url.params["q"])
+                return httpx.Response(200, json={"files": [
+                    {"id": "f1", "name": "CV Mario.pdf", "mimeType": "application/pdf",
+                     "version": "1", "parents": ["folderA"]},
+                    {"id": "d1", "name": "CV", "mimeType": "application/vnd.google-apps.folder",
+                     "parents": ["folderA"]},
+                    {"id": "f2", "name": "CV Anna.pdf", "mimeType": "application/pdf",
+                     "version": "1", "parents": ["folderA"]},
+                ]})
+            if request.url.path.endswith("/files/root"):
+                return httpx.Response(200, json={"id": "root-id"})
+            if request.url.path.endswith("/files/folderA"):
+                return httpx.Response(200, json={"id": "folderA", "name": "HR", "parents": ["root-id"]})
+            return httpx.Response(200, json={"id": "root-id", "name": "My Drive"})
+
+        provider = GoogleDriveProvider("id", "secret", transport=httpx.MockTransport(handler))
+        folders, files, truncated = await provider.search("tok", "CV's", {}, limit=2)
+        assert "name contains 'CV\\'s'" in seen[0]  # quote escaped
+        assert truncated is True  # 3 matches, limit 2
+        assert [f.path for f in folders] == ["/HR/CV"] and [f.path for f in files] == ["/HR/CV Mario.pdf"]
+
+    @pytest.mark.asyncio
+    async def test_dropbox_search(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            assert request.url.path.endswith("/files/search_v2") and body["query"] == "cv"
+            assert body["options"]["filename_only"] is True
+            return httpx.Response(200, json={"has_more": False, "matches": [
+                {"metadata": {"metadata": {".tag": "file", "id": "id:1", "name": "cv.pdf",
+                                           "path_display": "/HR/cv.pdf", "rev": "1"}}},
+                {"metadata": {"metadata": {".tag": "folder", "id": "id:2", "name": "CVs",
+                                           "path_display": "/HR/CVs"}}},
+            ]})
+
+        provider = DropboxProvider("key", "secret", transport=httpx.MockTransport(handler))
+        folders, files, truncated = await provider.search("tok", "cv", {}, limit=50)
+        assert [f.path for f in files] == ["/HR/cv.pdf"] and [f.name for f in folders] == ["CVs"]
+        assert truncated is False
+
+    def test_endpoint_requires_two_characters(self, client):
+        from api import integrations_service
+
+        with patch.object(integrations_service.IntegrationAccount, "get", AsyncMock()):
+            response = client.get("/api/integrations/accounts/integration_account:1/search?q=a")
+        assert response.status_code == 400

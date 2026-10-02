@@ -1,0 +1,7 @@
+-- Rollback Migration 29: remove the job timeline fields
+
+REMOVE INDEX IF EXISTS idx_command_finished_at ON TABLE command;
+REMOVE INDEX IF EXISTS idx_command_status ON TABLE command;
+REMOVE FIELD IF EXISTS finished_at ON TABLE command;
+REMOVE FIELD IF EXISTS started_at ON TABLE command;
+REMOVE FIELD IF EXISTS created ON TABLE command;

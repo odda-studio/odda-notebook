@@ -9,6 +9,7 @@ from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import ConfigurationError, ContextLengthExceededError
+from open_notebook.utils.job_cancellation import cancellable
 
 try:
     from open_notebook.graphs.source import source_graph
@@ -47,6 +48,7 @@ class SourceProcessingOutput(CommandOutput):
         "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
     },
 )
+@cancellable
 async def process_source_command(
     input_data: SourceProcessingInput,
 ) -> SourceProcessingOutput:
@@ -180,6 +182,7 @@ class RunTransformationOutput(CommandOutput):
         "retry_log_level": "warning",
     },
 )
+@cancellable
 async def run_transformation_command(
     input_data: RunTransformationInput,
 ) -> RunTransformationOutput:

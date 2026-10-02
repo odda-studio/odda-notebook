@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
+import { useActivitySummary } from '@/lib/hooks/use-activity'
 import {
   Tooltip,
   TooltipContent,
@@ -42,7 +43,10 @@ import {
   Wrench,
   Command,
   FolderSync,
+  Activity,
 } from 'lucide-react'
+
+const ACTIVITY_HREF = '/activity'
 
 const getNavigation = (t: TFunction) => [
   {
@@ -56,6 +60,7 @@ const getNavigation = (t: TFunction) => [
     items: [
       { name: t('navigation.notebooks'), href: '/notebooks', icon: Book, iconClass: 'text-teal' },
       { name: t('navigation.askAndSearch'), href: '/search', icon: Search, iconClass: undefined },
+      { name: t('navigation.activity'), href: ACTIVITY_HREF, icon: Activity, iconClass: undefined },
     ],
   },
   {
@@ -79,6 +84,9 @@ export function AppSidebar() {
   const { logout } = useAuth()
   const { isCollapsed, toggleCollapse } = useSidebarStore()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
+  const { data: activitySummary } = useActivitySummary()
+  const activeJobs = activitySummary?.active ?? 0
+  const showFailedDot = activeJobs === 0 && (activitySummary?.failed_recent ?? 0) > 0
 
   // The active item is the longest href that prefixes the current path.
   // Longest-wins keeps `/settings` from also highlighting on `/settings/models`
@@ -253,6 +261,26 @@ export function AppSidebar() {
 
                 {section.items.map((item) => {
                   const isActive = item.href === activeHref
+                  const isActivityItem = item.href === ACTIVITY_HREF
+                  const activityIndicator = isActivityItem && (activeJobs > 0 ? (
+                    <span
+                      data-testid="activity-badge"
+                      className={cn(
+                        'rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-primary-foreground tabular-nums',
+                        isCollapsed ? 'absolute right-0.5 top-0.5 min-w-4 text-center' : 'ml-auto'
+                      )}
+                    >
+                      {activeJobs > 99 ? '99+' : activeJobs}
+                    </span>
+                  ) : showFailedDot ? (
+                    <span
+                      data-testid="activity-failed-dot"
+                      className={cn(
+                        'h-2 w-2 rounded-full bg-destructive',
+                        isCollapsed ? 'absolute right-1.5 top-1.5' : 'ml-auto'
+                      )}
+                    />
+                  ) : null)
                   const button = (
                     <Button
                       variant="ghost"
@@ -265,6 +293,7 @@ export function AppSidebar() {
                     >
                       <item.icon className={cn('h-4 w-4 opacity-85', item.iconClass)} />
                       {!isCollapsed && <span>{item.name}</span>}
+                      {activityIndicator}
                     </Button>
                   )
 

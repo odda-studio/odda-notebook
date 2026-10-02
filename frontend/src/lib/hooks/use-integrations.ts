@@ -27,6 +27,8 @@ export const INTEGRATION_QUERY_KEYS = {
   accounts: ['integrations', 'accounts'] as const,
   browse: (accountId: string, parentId?: string) =>
     ['integrations', 'accounts', accountId, 'browse', parentId ?? 'root'] as const,
+  search: (accountId: string, query: string) =>
+    ['integrations', 'accounts', accountId, 'search', query] as const,
   /** Prefix of every link query (lists and per-link files). */
   links: ['integrations', 'links'] as const,
   linkList: (notebookId?: string) => ['integrations', 'links', 'list', notebookId ?? 'all'] as const,
@@ -85,6 +87,16 @@ export function useIntegrationAccounts() {
   return useQuery({
     queryKey: INTEGRATION_QUERY_KEYS.accounts,
     queryFn: () => integrationsApi.listAccounts(),
+  })
+}
+
+/** Name search across the whole connected account (query of 2+ chars). */
+export function useRemoteSearch(accountId: string, query: string, enabled = true) {
+  return useQuery({
+    queryKey: INTEGRATION_QUERY_KEYS.search(accountId, query),
+    queryFn: () => integrationsApi.search(accountId, query),
+    enabled: !!accountId && enabled && query.trim().length >= 2,
+    staleTime: 30_000,
   })
 }
 

@@ -984,6 +984,12 @@ class BrowseResponse(BaseModel):
     items: List[RemoteItemResponse]
 
 
+class RemoteSearchResponse(BaseModel):
+    query: str
+    items: List[RemoteItemResponse]
+    truncated: bool = Field(False, description="More matches exist than returned")
+
+
 class LinkImportItem(BaseModel):
     kind: LinkKind
     remote_id: str = Field(..., max_length=1000)
@@ -1121,3 +1127,61 @@ class SourceBulkDeleteResponse(BaseModel):
     errors: List[str] = Field(
         default_factory=list, description="First few failures, if any, as \"id: reason\""
     )
+
+
+# Activity view (background jobs: extraction, transformations, embeddings, sync)
+class ActivityJob(BaseModel):
+    id: str = Field(..., description="Command id")
+    name: str = Field(..., description="Command name, e.g. process_source")
+    stage: str = Field(
+        ...,
+        description=(
+            "extraction | transformation | insight | embedding | insight_embedding | "
+            "note_embedding | cloud_sync | podcast | rebuild_embeddings | other"
+        ),
+    )
+    status: str = Field(..., description="new (queued) | running | completed | failed | canceled")
+    created: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    error: Optional[str] = None
+    target_type: Optional[Literal["source", "note", "link", "podcast"]] = None
+    target_id: Optional[str] = None
+    target_title: Optional[str] = None
+    target_exists: bool = False
+    detail: Optional[str] = Field(
+        None, description="Transformation title / insight type / number of transformations"
+    )
+    retryable: bool = Field(False, description="A failed source extraction that can be retried")
+    cancel_requested: bool = Field(
+        False, description="Stop requested: a running job shows as stopping until it ends"
+    )
+
+
+class ActivityCounts(BaseModel):
+    active: int
+    queued: int
+    running: int
+    failed_recent: int
+
+
+class ActivityResponse(BaseModel):
+    active: List[ActivityJob]
+    recent: List[ActivityJob]
+    counts: ActivityCounts
+
+
+class CancelTargetRequest(BaseModel):
+    target_type: Literal["source", "link"]
+    target_id: str
+    delete_target: bool = Field(False, description="Also delete the source")
+
+
+class CancelJobsResponse(BaseModel):
+    canceled: int = Field(..., description="Jobs flagged for cancellation")
+    stopping: int = Field(..., description="Of those, jobs that were running and are stopping")
+    deleted_target: bool = False
+
+
+class DismissResponse(BaseModel):
+    dismissed: int

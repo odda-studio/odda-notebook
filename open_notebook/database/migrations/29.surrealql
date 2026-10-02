@@ -1,0 +1,15 @@
+-- Migration 29: job timeline for the activity view
+-- The `command` table belongs to surreal-commands, which does not reliably
+-- record when a job was queued, started or finished (the synchronous submit
+-- path writes no timestamps). These computed fields make the database keep
+-- that timeline for every job, whatever path wrote it.
+
+DEFINE FIELD IF NOT EXISTS created ON TABLE command VALUE $before OR time::now();
+-- first transition to 'running' (kept across retries, which stay 'running')
+DEFINE FIELD IF NOT EXISTS started_at ON TABLE command
+    VALUE IF $this.status = 'running' AND $before = NONE THEN time::now() ELSE $before END;
+DEFINE FIELD IF NOT EXISTS finished_at ON TABLE command
+    VALUE IF $this.status IN ['completed', 'failed', 'canceled'] AND $before = NONE THEN time::now() ELSE $before END;
+
+DEFINE INDEX IF NOT EXISTS idx_command_status ON TABLE command COLUMNS status;
+DEFINE INDEX IF NOT EXISTS idx_command_finished_at ON TABLE command COLUMNS finished_at;

@@ -92,6 +92,13 @@ export interface RemoteItem {
   selectable?: boolean
 }
 
+export interface RemoteSearchResponse {
+  query: string
+  items: RemoteItem[]
+  /** More matches exist than returned. */
+  truncated: boolean
+}
+
 export interface BrowseResponse {
   parent_id: string
   path: string
@@ -266,6 +273,15 @@ export const integrationsApi = {
   },
 
   /** List remote folders and files; omit parentId for the root. */
+  /** Files and folders matching `q` (min 2 chars) by name anywhere in the account. */
+  search: async (accountId: string, q: string, limit = 100): Promise<RemoteSearchResponse> => {
+    const response = await apiClient.get<RemoteSearchResponse>(
+      `/integrations/accounts/${accountId}/search`,
+      { params: { q, limit } }
+    )
+    return response.data
+  },
+
   browse: async (accountId: string, parentId?: string): Promise<BrowseResponse> => {
     const params = parentId ? { parent_id: parentId } : {}
     const response = await apiClient.get<BrowseResponse>(

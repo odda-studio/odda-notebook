@@ -1,0 +1,5 @@
+-- Rollback Migration 30: remove job cancel/dismiss fields
+
+REMOVE FIELD IF EXISTS dismissed ON TABLE command;
+REMOVE FIELD IF EXISTS cancel_requested_at ON TABLE command;
+REMOVE FIELD IF EXISTS cancel_requested ON TABLE command;

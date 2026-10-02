@@ -15,6 +15,7 @@ from open_notebook.podcasts.models import (
     SpeakerProfile,
     _resolve_model_config,
 )
+from open_notebook.utils.job_cancellation import cancellable
 from open_notebook.utils.model_utils import full_model_dump
 
 try:
@@ -63,6 +64,7 @@ class PodcastGenerationOutput(CommandOutput):
 
 
 @command("generate_podcast", app="open_notebook", retry={"max_attempts": 1})
+@cancellable
 async def generate_podcast_command(
     input_data: PodcastGenerationInput,
 ) -> PodcastGenerationOutput:

@@ -7,6 +7,7 @@ from loguru import logger
 from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.integrations.sync import run_sync
+from open_notebook.utils.job_cancellation import cancellable
 
 
 class SyncLinkInput(CommandInput):
@@ -42,6 +43,7 @@ class SyncLinkOutput(CommandOutput):
         "retry_log_level": "debug",
     },
 )
+@cancellable
 async def sync_link_command(input_data: SyncLinkInput) -> SyncLinkOutput:
     start = time.time()
     result = await run_sync(input_data.link_id)

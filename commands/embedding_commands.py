@@ -19,6 +19,7 @@ from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError, ContextLengthExceededError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
+from open_notebook.utils.job_cancellation import cancellable
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -220,6 +221,7 @@ class EmbedSourceOutput(CommandOutput):
 
 
 @command("embed_note", app="open_notebook", retry=EMBED_RETRY_CONFIG)
+@cancellable
 async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
     """
     Generate and store embedding for a single note.
@@ -262,6 +264,7 @@ async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
 
 
 @command("embed_insight", app="open_notebook", retry=EMBED_RETRY_CONFIG)
+@cancellable
 async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOutput:
     """
     Generate and store embedding for a single source insight.
@@ -304,6 +307,7 @@ async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOu
 
 
 @command("embed_source", app="open_notebook", retry=EMBED_RETRY_CONFIG)
+@cancellable
 async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutput:
     """
     Generate and store embeddings for a source document.
@@ -407,6 +411,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
 
 
 @command("create_insight", app="open_notebook", retry=EMBED_RETRY_CONFIG)
+@cancellable
 async def create_insight_command(
     input_data: CreateInsightInput,
 ) -> CreateInsightOutput:
@@ -612,6 +617,7 @@ def _submit_embedding_jobs(
 
 
 @command("rebuild_embeddings", app="open_notebook", retry=None)
+@cancellable
 async def rebuild_embeddings_command(
     input_data: RebuildEmbeddingsInput,
 ) -> RebuildEmbeddingsOutput:

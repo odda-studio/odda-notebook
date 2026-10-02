@@ -348,6 +348,17 @@ Example: "Keep this in notebook but don't use in this conversation"
 
 ## Processing Status & Troubleshooting
 
+### Following Everything in Progress: the Activity Page
+
+**Activity** in the sidebar (with a badge counting the jobs in progress) lists every background job, grouped by the source it works on, so you can follow a file through its pipeline: **extraction → transformations → saving insights → embeddings**. Cloud syncs, note embeddings and podcasts appear there too.
+
+- **In progress** shows queued jobs (waiting for the worker) and running ones with their elapsed time. If jobs stay queued and nothing runs, the worker is probably stopped (`make worker-start`).
+- **Recent** shows what finished in the last hour, day or week, with duration and the error of failed jobs; a failed extraction can be retried from there.
+- **Stop** a single job, **Stop all** jobs of a source or cloud link, or **Stop and delete source** to drop a file you didn't mean to add. A queued job never starts; a running one stops within a few seconds (it shows *Stopping…* meanwhile). Stopping is best effort: work already handed to a follow-up job (e.g. an embedding queued by the extraction) keeps its own row and can be stopped too.
+- **Remove from list** (×) or **Clear finished** hides finished jobs; nothing is deleted.
+
+Timings are recorded for jobs created after this feature was installed.
+
 ### What the Status Indicators Mean
 
 ```

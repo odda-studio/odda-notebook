@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { BrowseResponse, RemoteItem } from '@/lib/api/integrations'
 import { CloudPicker, CloudPickerValue, EMPTY_CLOUD_PICKER_VALUE } from './CloudPicker'
@@ -78,7 +78,24 @@ vi.mock('@/lib/hooks/use-integrations', () => ({
     error: null,
     data: LISTINGS[parentId ?? 'root'],
   }),
+  useRemoteSearch: (_accountId: string, query: string, enabled: boolean) => ({
+    isFetching: false,
+    isError: false,
+    error: null,
+    data: enabled && query.length >= 2 ? SEARCH_RESULTS : undefined,
+  }),
 }))
+
+const SEARCH_RESULTS = {
+  query: 'deep',
+  truncated: true,
+  items: [
+    {
+      id: 'id:deep', name: 'deep-report.pdf', path: '/Archive/2024/deep-report.pdf', kind: 'file',
+      size: 10, modified_at: null, mime_type: null, extension: 'pdf', eligible: true, web_url: null,
+    },
+  ],
+}
 
 let latest: CloudPickerValue = EMPTY_CLOUD_PICKER_VALUE
 function Harness() {
@@ -150,5 +167,48 @@ describe('CloudPicker', () => {
     // Folders inside the grouping are selectable
     fireEvent.click(screen.getByRole('checkbox', { name: 'Team' }))
     expect(latest.items.map(i => i.remote_id)).toEqual(['id:team'])
+  })
+
+  it('filters the open folder by name, ignoring case and accents', () => {
+    render(<Harness />)
+    const box = screen.getByLabelText('integrations.filterPlaceholder')
+
+    fireEvent.change(box, { target: { value: 'RESEARCH' } })
+    expect(screen.getByText('Research')).toBeInTheDocument()
+    expect(screen.queryByText('a.pdf')).not.toBeInTheDocument()
+
+    fireEvent.change(box, { target: { value: 'zzz' } })
+    expect(screen.getByText('integrations.noMatches')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('integrations.clearFilter'))
+    expect(screen.getByText('a.pdf')).toBeInTheDocument()
+  })
+
+  it('searches the whole account and selects a result from another folder', () => {
+    vi.useFakeTimers()
+    try {
+      render(<Harness />)
+      fireEvent.change(screen.getByLabelText('integrations.filterPlaceholder'), {
+        target: { value: 'deep' },
+      })
+      fireEvent.click(screen.getByText('integrations.searchWholeAccount'))
+      act(() => {
+        vi.advanceTimersByTime(400) // debounce
+      })
+
+      expect(screen.getByText('/Archive/2024/deep-report.pdf')).toBeInTheDocument()
+      expect(screen.getByText('integrations.searchTruncated')).toBeInTheDocument()
+      expect(screen.queryByText('integrations.selectCurrentFolder')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'deep-report.pdf' }))
+      expect(latest.items).toEqual([
+        { kind: 'file', remote_id: 'id:deep', remote_path: '/Archive/2024/deep-report.pdf', name: 'deep-report.pdf' },
+      ])
+
+      fireEvent.click(screen.getByText('integrations.backToFolder'))
+      expect(screen.getByText('a.pdf')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

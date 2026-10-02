@@ -1,0 +1,9 @@
+-- Migration 30: cancel and dismiss background jobs from the activity view
+-- (fields on the surreal-commands `command` table; the worker-side wrapper in
+-- open_notebook/utils/job_cancellation.py reads cancel_requested).
+
+DEFINE FIELD IF NOT EXISTS cancel_requested ON TABLE command TYPE option<bool>;
+DEFINE FIELD IF NOT EXISTS cancel_requested_at ON TABLE command TYPE option<datetime>;
+-- hidden from the activity list; the record is kept because sources point to
+-- their processing job for their status
+DEFINE FIELD IF NOT EXISTS dismissed ON TABLE command TYPE option<bool>;

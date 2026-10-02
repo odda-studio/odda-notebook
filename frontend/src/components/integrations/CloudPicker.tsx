@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronRight, ExternalLink, House, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, ExternalLink, House, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { useIntegrationAccounts, useRemoteBrowse } from '@/lib/hooks/use-integrations'
+import { useIntegrationAccounts, useRemoteBrowse, useRemoteSearch } from '@/lib/hooks/use-integrations'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { cn } from '@/lib/utils'
 import type { ImportLinkItem, RemoteItem } from '@/lib/api/integrations'
@@ -55,6 +56,14 @@ interface CloudPickerProps {
   idPrefix?: string
 }
 
+/** Case- and accent-insensitive form used by the folder filter. */
+export function normalizeForFilter(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
+const SEARCH_MIN_CHARS = 2
+const SEARCH_DEBOUNCE_MS = 350
+
 function toImportItem(item: RemoteItem): ImportLinkItem {
   return { kind: item.kind, remote_id: item.id, remote_path: item.path, name: item.name }
 }
@@ -63,6 +72,16 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
   const { t } = useTranslation()
   const { data: accounts, isLoading: accountsLoading } = useIntegrationAccounts()
   const [crumbs, setCrumbs] = useState<Crumb[]>([])
+  // Text typed in the search box: filters the open folder instantly, and is
+  // the query of the account-wide search when that mode is on.
+  const [filter, setFilter] = useState('')
+  const [accountSearch, setAccountSearch] = useState(false)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedQuery(filter.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(handle)
+  }, [filter])
 
   // Preselect the only connected account
   useEffect(() => {
@@ -95,6 +114,29 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
     error: listingErrorObj,
   } = useRemoteBrowse(value.accountId, current.id, !!account)
 
+  const searching = accountSearch && debouncedQuery.length >= SEARCH_MIN_CHARS
+  const {
+    data: searchResult,
+    isFetching: searchLoading,
+    isError: searchError,
+    error: searchErrorObj,
+  } = useRemoteSearch(value.accountId, debouncedQuery, !!account && searching)
+
+  const normalizedFilter = normalizeForFilter(filter)
+  const visibleItems = useMemo(() => {
+    if (searching) return searchResult?.items ?? []
+    const items = listing?.items ?? []
+    if (!normalizedFilter) return items
+    return items.filter(item => normalizeForFilter(item.name).includes(normalizedFilter))
+  }, [searching, searchResult, listing, normalizedFilter])
+
+  /** Navigating anywhere leaves the search: the box then filters that folder. */
+  const navigate = (next: Crumb[]) => {
+    setCrumbs(next)
+    setFilter('')
+    setAccountSearch(false)
+  }
+
   const selectedIds = useMemo(() => new Set(value.items.map(i => i.remote_id)), [value.items])
 
   const toggleItem = (item: ImportLinkItem) => {
@@ -109,7 +151,7 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
 
   const handleAccountChange = (accountId: string) => {
     // Items belong to one account: switching starts a new selection
-    setCrumbs([])
+    navigate([])
     onChange({ accountId, items: [] })
   }
 
@@ -169,6 +211,21 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
           <Label>{t('integrations.pickerItems')}</Label>
           <p className="text-xs text-muted-foreground">{t('integrations.pickerHint')}</p>
           <div className="rounded-md border">
+            {searching ? (
+              <div className="flex items-center gap-2 border-b px-3 py-2 text-sm">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                  onClick={() => navigate(crumbs)}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  {t('integrations.backToFolder')}
+                </button>
+                <span className="truncate text-muted-foreground">
+                  {t('integrations.searchResultsFor', { query: debouncedQuery })}
+                </span>
+              </div>
+            ) : (
             <nav
               aria-label={t('integrations.breadcrumb')}
               className="flex flex-wrap items-center gap-1 border-b px-3 py-2 text-sm"
@@ -185,7 +242,7 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                           ? 'font-medium inline-flex items-center gap-1'
                           : 'text-primary hover:underline inline-flex items-center gap-1'
                       }
-                      onClick={() => setCrumbs(crumbs.slice(0, index))}
+                      onClick={() => navigate(crumbs.slice(0, index))}
                       disabled={isLast}
                     >
                       {index === 0 && <House className="h-3.5 w-3.5" />}
@@ -195,21 +252,76 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                 )
               })}
             </nav>
+            )}
+
+            <div className="border-b px-3 py-2 space-y-1.5">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder={
+                    accountSearch
+                      ? t('integrations.searchAccountPlaceholder')
+                      : t('integrations.filterPlaceholder')
+                  }
+                  aria-label={t('integrations.filterPlaceholder')}
+                  className="h-8 pl-8 pr-8"
+                />
+                {filter && (
+                  <button
+                    type="button"
+                    onClick={() => setFilter('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label={t('integrations.clearFilter')}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {!accountSearch && filter.trim().length >= SEARCH_MIN_CHARS && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {t('integrations.filterCount', {
+                      shown: visibleItems.length,
+                      total: listing?.items.length ?? 0,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    onClick={() => setAccountSearch(true)}
+                  >
+                    <Search className="h-3 w-3" />
+                    {t('integrations.searchWholeAccount')}
+                  </button>
+                </div>
+              )}
+              {accountSearch && filter.trim().length < SEARCH_MIN_CHARS && (
+                <p className="text-xs text-muted-foreground">{t('integrations.searchMinChars')}</p>
+              )}
+            </div>
 
             <div className="max-h-64 overflow-y-auto p-1">
-              {listingLoading ? (
+              {(searching ? searchLoading && !searchResult : listingLoading) ? (
                 <div className="flex justify-center py-6">
                   <LoadingSpinner />
                 </div>
-              ) : listingError ? (
+              ) : searching && searchError ? (
+                <p className="p-3 text-sm text-destructive">
+                  {getApiErrorMessage(searchErrorObj, t, 'integrations.searchFailed')}
+                </p>
+              ) : !searching && listingError ? (
                 <p className="p-3 text-sm text-destructive">
                   {getApiErrorMessage(listingErrorObj, t, 'integrations.browseLoadFailed')}
                 </p>
-              ) : !listing || listing.items.length === 0 ? (
-                <p className="p-3 text-sm text-muted-foreground">{t('integrations.emptyFolder')}</p>
+              ) : visibleItems.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  {searching || normalizedFilter ? t('integrations.noMatches') : t('integrations.emptyFolder')}
+                </p>
               ) : (
                 <ul>
-                  {listing.items.map(item => {
+                  {visibleItems.map(item => {
                     const disabled = !item.eligible
                     const selectable = item.selectable !== false
                     const checkboxId = `${idPrefix}-item-${item.id}`
@@ -234,7 +346,12 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                             type="button"
                             className="flex min-w-0 flex-1 items-center gap-1 text-left"
                             onClick={() =>
-                              setCrumbs([...crumbs, { id: item.id, name: displayName(item), path: item.path }])
+                              navigate(
+                                searching
+                                  // a search hit has no known crumb chain: open it on its own
+                                  ? [{ id: item.id, name: displayName(item), path: item.path }]
+                                  : [...crumbs, { id: item.id, name: displayName(item), path: item.path }]
+                              )
                             }
                             title={selectable ? t('integrations.openFolder') : t('integrations.virtualFolderHint')}
                           >
@@ -246,6 +363,11 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                             <span className="block truncate" title={item.name}>
                               {item.name}
                             </span>
+                            {searching && (
+                              <span className="block truncate text-xs text-muted-foreground" title={item.path}>
+                                {item.path}
+                              </span>
+                            )}
                             {disabled && (
                               <span className="block text-xs text-muted-foreground">
                                 {t('integrations.fileNotEligible')}
@@ -275,8 +397,12 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                   })}
                 </ul>
               )}
+              {searching && searchResult?.truncated && (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('integrations.searchTruncated')}</p>
+              )}
             </div>
 
+            {!searching && (
             <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
               <Button
                 type="button"
@@ -290,6 +416,7 @@ export function CloudPicker({ value, onChange, idPrefix = 'cloud-picker' }: Clou
                 {t('integrations.selectCurrentFolder')}
               </Button>
             </div>
+            )}
           </div>
 
           <div className="space-y-2" data-testid="cloud-picker-selection">

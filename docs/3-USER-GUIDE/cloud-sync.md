@@ -65,6 +65,7 @@ On the provider card click **Connect account** and approve access.
 From **Add Source → Cloud** — on the Sources page (general sources) or inside a notebook — or from Settings → Integrations → *Linked items*:
 
 1. Pick the account, browse, and tick any mix of **files and folders** (the selection is kept while you move between folders). Files that can't be imported (extension/size filters) are greyed out.
+   - **Search:** the box above the list filters the open folder as you type (case and accents don't matter). With 2+ characters, **Search the whole account** finds files and folders by name anywhere in Drive/Dropbox, shows their path, and lets you tick them directly (opening a folder from the results browses into it).
    - **Shared items:** at the top level, Google Drive shows **Shared with me** and **Shared drives**, Dropbox shows **Shared with me** (folders shared with you, even those you haven't added to your Dropbox). These are groupings: open them and pick the folders or files inside. Shared folders you already added to your Dropbox also appear in the normal tree.
 2. Choose the notebooks (none = general sources only; inside a notebook the current one is preselected).
 3. Decide whether to **Keep in sync** (on by default), whether folders include subfolders, the sync interval and optional transformations.

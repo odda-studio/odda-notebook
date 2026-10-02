@@ -189,12 +189,17 @@ class GoogleDriveProvider(StorageProvider):
         return response.json()
 
     async def _list_query(
-        self, access_token: str, query: str, all_drives: bool = True
+        self,
+        access_token: str,
+        query: str,
+        all_drives: bool = True,
+        max_items: Optional[int] = None,
+        extra_fields: str = "",
     ) -> List[Dict[str, Any]]:
         params: Dict[str, Any] = {
             "q": query,
-            "fields": f"nextPageToken,files({FILE_FIELDS})",
-            "pageSize": 1000,
+            "fields": f"nextPageToken,files({FILE_FIELDS}{extra_fields})",
+            "pageSize": min(max_items or 1000, 1000),
             "orderBy": "folder,name",
             "supportsAllDrives": "true",
             "includeItemsFromAllDrives": "true",
@@ -207,7 +212,7 @@ class GoogleDriveProvider(StorageProvider):
             data = await self._get(access_token, "files", params)
             items.extend(data.get("files", []))
             token = data.get("nextPageToken")
-            if not token:
+            if not token or (max_items is not None and len(items) >= max_items):
                 return items
             params["pageToken"] = token
 
@@ -254,7 +259,16 @@ class GoogleDriveProvider(StorageProvider):
         return self._root_id
 
     async def _folder_path(self, access_token: str, folder_id: str) -> str:
-        """Human-readable path of a folder, walking up its parents."""
+        """Human-readable path of a folder, walking up its parents (memoised
+        per provider instance: search results often share folders)."""
+        cache: Dict[str, str] = self.__dict__.setdefault("_path_cache", {})
+        if folder_id in cache:
+            return cache[folder_id]
+        path = await self._walk_folder_path(access_token, folder_id)
+        cache[folder_id] = path
+        return path
+
+    async def _walk_folder_path(self, access_token: str, folder_id: str) -> str:
         parts: List[str] = []
         current: Optional[str] = folder_id
         for _ in range(MAX_PATH_DEPTH):
@@ -317,6 +331,30 @@ class GoogleDriveProvider(StorageProvider):
                              web_url="https://drive.google.com/drive/shared-drives", selectable=False),
             ] + folders
         return base, folders, files
+
+    async def search(
+        self, access_token: str, query: str, export_formats: Dict[str, str], limit: int
+    ) -> Tuple[List[RemoteFolder], List[RemoteFile], bool]:
+        q = f"name contains '{_escape(query)}' and trashed = false"
+        items = await self._list_query(
+            access_token, q, max_items=limit + 1, extra_fields=",parents"
+        )
+        truncated = len(items) > limit
+        folders: List[RemoteFolder] = []
+        files: List[RemoteFile] = []
+        for item in items[:limit]:
+            parents = item.get("parents") or []
+            base = (await self._folder_path(access_token, parents[0])).rstrip("/") if parents else ""
+            path = f"{base}/{item['name']}"
+            if item.get("mimeType") == FOLDER_MIME:
+                folders.append(
+                    RemoteFolder(id=item["id"], name=item["name"], path=path, web_url=_folder_url(item["id"]))
+                )
+            else:
+                remote = _to_remote(item, path, export_formats)
+                if remote:
+                    files.append(remote)
+        return folders, files, truncated
 
     async def get_file(
         self, access_token: str, file_id: str, export_formats: Dict[str, str]

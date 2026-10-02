@@ -516,6 +516,9 @@ async def run_sync(link_id: str) -> SyncResult:
         error = _short(e)
         result.skipped_reason = error
         return result
+    except asyncio.CancelledError:
+        error = "Canceled by user"
+        raise
     except BaseException as e:
         # Transient (network, provider 5xx, DB conflict): surfaced, then retried
         error = _short(e)
