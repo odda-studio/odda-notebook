@@ -27,6 +27,23 @@ RUN i=0; until npm ci; do \
 COPY frontend/ ./
 RUN npm run build
 
+# Website widget (web components served by the API at /api/widget/embed.js)
+FROM node:22-slim AS widget-builder
+WORKDIR /app/widget
+COPY widget/package.json widget/package-lock.json ./
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN npm config set registry ${NPM_REGISTRY} \
+ && npm config set fetch-retries 5 \
+ && npm config set fetch-retry-mintimeout 20000 \
+ && npm config set fetch-retry-maxtimeout 120000
+RUN i=0; until npm ci; do \
+      i=$((i+1)); \
+      if [ "$i" -ge 5 ]; then echo "npm ci failed after $i attempts"; exit 1; fi; \
+      echo "npm ci failed (attempt $i); retrying in 15s"; sleep 15; \
+    done
+COPY widget/ ./
+RUN npm run build
+
 # Stage 2: Backend builder
 FROM python:3.12-slim-trixie AS backend-builder
 
@@ -88,6 +105,9 @@ COPY --from=backend-builder /app/.venv /app/.venv
 
 # Copy the source code
 COPY . /app
+
+# Built website widget (GET /api/widget/embed.js)
+COPY --from=widget-builder /app/widget/dist /app/widget/dist
 
 # Copy pre-downloaded tiktoken encoding from builder (outside /data/ — volume-mount safe)
 COPY --from=backend-builder /app/tiktoken-cache /app/tiktoken-cache

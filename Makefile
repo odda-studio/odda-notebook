@@ -1,4 +1,4 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart scheduler-start scheduler-stop
+.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart scheduler-start scheduler-stop widget-build widget-dev widget-test
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 .PHONY: release-test release-stack release-stack-down
@@ -180,6 +180,16 @@ scheduler-start:
 scheduler-stop:
 	@echo "Stopping sync scheduler..."
 	pkill -f "open_notebook.integrations.scheduler" || true
+
+# === Website widget (web components served at /api/widget/embed.js) ===
+widget-build:
+	cd widget && ([ -d node_modules ] || npm ci) && npm run build
+
+widget-dev:
+	cd widget && ([ -d node_modules ] || npm ci) && npm run dev
+
+widget-test:
+	cd widget && ([ -d node_modules ] || npm ci) && npm test
 
 # === Service Management ===
 start-all:

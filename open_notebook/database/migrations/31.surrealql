@@ -1,0 +1,23 @@
+-- Migration 31: website widget keys
+-- A key exposes ONE notebook to a public chat widget (read-only RAG). Only a
+-- SHA-256 of the key is stored; the full key is shown once when created.
+
+DEFINE TABLE IF NOT EXISTS widget_key SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS notebook ON TABLE widget_key TYPE record<notebook>;
+DEFINE FIELD IF NOT EXISTS name ON TABLE widget_key TYPE string;
+DEFINE FIELD IF NOT EXISTS key_hash ON TABLE widget_key TYPE string;
+DEFINE FIELD IF NOT EXISTS key_prefix ON TABLE widget_key TYPE string;
+DEFINE FIELD IF NOT EXISTS enabled ON TABLE widget_key TYPE bool DEFAULT true;
+-- exact origins ("https://www.example.com"); empty = any origin
+DEFINE FIELD IF NOT EXISTS allowed_origins ON TABLE widget_key TYPE array<string> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS rate_limit_per_minute ON TABLE widget_key TYPE int DEFAULT 20;
+DEFINE FIELD IF NOT EXISTS daily_limit ON TABLE widget_key TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS last_used_at ON TABLE widget_key TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE widget_key TYPE option<datetime> DEFAULT time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE widget_key TYPE option<datetime> DEFAULT time::now();
+DEFINE INDEX IF NOT EXISTS idx_widget_key_hash ON TABLE widget_key COLUMNS key_hash UNIQUE;
+DEFINE INDEX IF NOT EXISTS idx_widget_key_notebook ON TABLE widget_key COLUMNS notebook;
+
+DEFINE EVENT IF NOT EXISTS widget_key_notebook_delete ON TABLE notebook WHEN ($after == NONE) THEN {
+    DELETE widget_key WHERE notebook == $before.id;
+};

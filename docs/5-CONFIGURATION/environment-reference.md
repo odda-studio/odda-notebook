@@ -146,6 +146,16 @@ All optional: these can also be set from **Settings → Integrations**. When set
 
 ---
 
+## Website Widget
+
+See [Website Widget](../3-USER-GUIDE/website-widget.md).
+
+| Variable | Required? | Default | Description |
+|----------|-----------|---------|-------------|
+| `OPEN_NOTEBOOK_TRUST_FORWARDED_FOR` | No | `false` | Behind a reverse proxy, use the first `X-Forwarded-For` address as the visitor IP for the widget's per-visitor rate limit. Only enable it if your proxy overwrites that header (otherwise callers can spoof it) |
+
+---
+
 ## Network / Proxy
 
 | Variable | Required? | Default | Description |

@@ -1,0 +1,4 @@
+-- Rollback Migration 31: remove website widget keys
+
+REMOVE EVENT IF EXISTS widget_key_notebook_delete ON TABLE notebook;
+REMOVE TABLE IF EXISTS widget_key;

@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, ArchiveRestore, Shuffle, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Globe, Shuffle, Trash2 } from 'lucide-react'
 import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { NotebookDefaultTransformationsDialog } from './NotebookDefaultTransformationsDialog'
+import { NotebookWidgetDialog } from './NotebookWidgetDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { InlineEdit } from '@/components/common/InlineEdit'
@@ -22,6 +23,7 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
   const dfLocale = getDateLocale(language)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showDefaultsDialog, setShowDefaultsDialog] = useState(false)
+  const [showWidgetDialog, setShowWidgetDialog] = useState(false)
   const defaultCount = notebook.default_transformations?.length ?? 0
   
   const updateNotebook = useUpdateNotebook()
@@ -127,6 +129,15 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
                 ? t('notebooks.defaultTransformationsCount', { count: defaultCount })
                 : t('notebooks.noDefaultTransformations')}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowWidgetDialog(true)}
+              className="inline-flex items-center gap-1 rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t('widget.headerTooltip')}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              {t('widget.headerLink')}
+            </button>
             <span>
             {t('common.created', { time: formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }) })} • 
             {t('common.updated', { time: formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }) })}
@@ -139,6 +150,12 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
         notebook={notebook}
         open={showDefaultsDialog}
         onOpenChange={setShowDefaultsDialog}
+      />
+
+      <NotebookWidgetDialog
+        notebook={notebook}
+        open={showWidgetDialog}
+        onOpenChange={setShowWidgetDialog}
       />
 
       <NotebookDeleteDialog

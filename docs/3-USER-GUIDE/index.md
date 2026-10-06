@@ -27,6 +27,8 @@ How to bring content into your notebook. Supports PDFs, web links, audio, video,
 
 **Related:** [Content Processing Engines](content-processing-engines.md) — choose how documents and URLs are extracted (Docling, Firecrawl, Jina, Crawl4AI) and control OCR.
 
+**Related:** [Website Widget](website-widget.md) — embed a chat on your website that answers from a notebook.
+
 **Related:** [Cloud Storage Sync](cloud-sync.md) — import a Dropbox or Google Drive folder and keep its sources up to date automatically.
 
 ---

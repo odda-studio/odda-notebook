@@ -47,8 +47,11 @@ from api.routers import (
     speaker_profiles,
     transformation_groups,
     transformations,
+    widget,
+    widget_keys,
 )
 from api.routers import commands as commands_router
+from api.widget_cors import WidgetCORSMiddleware
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -251,6 +254,9 @@ app.add_middleware(
         # callback is protected by its signed `state` parameter instead.
         "/api/integrations/providers/dropbox/callback",
         "/api/integrations/providers/google_drive/callback",
+        # Public website widget: authenticated by its own widget key
+        "/api/widget/chat",
+        "/api/widget/embed.js",
     ],
 )
 
@@ -282,6 +288,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Outermost: the public widget endpoints must work from any website origin,
+# regardless of the app-wide CORS policy above (see api/widget_cors.py).
+app.add_middleware(WidgetCORSMiddleware)
 
 
 # Custom exception handler to ensure CORS headers are included in error responses
@@ -389,6 +399,8 @@ async def open_notebook_error_handler(request: Request, exc: OpenNotebookError):
 # Include routers
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
+app.include_router(widget.router, prefix="/api", tags=["widget"])
+app.include_router(widget_keys.router, prefix="/api", tags=["widget-keys"])
 app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])
 app.include_router(search.router, prefix="/api", tags=["search"])

@@ -23,6 +23,10 @@ frontend/out
 frontend/.env*
 frontend/*.log
 
+# Widget (rebuilt inside the image)
+widget/node_modules
+widget/dist
+
 # Local tooling / agent working dirs (can contain full .venv + node_modules)
 .claude
 .antigravity

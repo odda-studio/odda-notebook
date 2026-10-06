@@ -1185,3 +1185,68 @@ class CancelJobsResponse(BaseModel):
 
 class DismissResponse(BaseModel):
     dismissed: int
+
+
+# Website widget (public chat on third-party sites, authenticated by widget key)
+WidgetSearchMode = Literal["insights", "insights-first", "full"]
+
+
+class WidgetHistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., max_length=4000)
+
+
+class WidgetChatRequest(BaseModel):
+    notebook_id: str = Field(..., max_length=200)
+    message: str = Field(..., max_length=2000)
+    history: List[WidgetHistoryTurn] = Field(default_factory=list, max_length=10)
+    search_mode: WidgetSearchMode = "insights-first"
+    language: Optional[str] = Field(None, max_length=35)
+
+    @field_validator("message")
+    @classmethod
+    def _message_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Message cannot be empty")
+        return value
+
+
+class WidgetKeyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    allowed_origins: List[str] = Field(default_factory=list, max_length=50)
+    rate_limit_per_minute: int = Field(20, ge=1, le=600)
+    daily_limit: int = Field(0, ge=0, le=100000, description="0 = unlimited")
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Name cannot be empty")
+        return value
+
+
+class WidgetKeyUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    enabled: Optional[bool] = None
+    allowed_origins: Optional[List[str]] = Field(None, max_length=50)
+    rate_limit_per_minute: Optional[int] = Field(None, ge=1, le=600)
+    daily_limit: Optional[int] = Field(None, ge=0, le=100000)
+
+
+class WidgetKeyResponse(BaseModel):
+    id: str
+    notebook_id: str
+    name: str
+    key_prefix: str
+    enabled: bool
+    allowed_origins: List[str]
+    rate_limit_per_minute: int
+    daily_limit: int
+    created: Optional[str] = None
+    last_used_at: Optional[str] = None
+
+
+class WidgetKeyCreatedResponse(WidgetKeyResponse):
+    key: str = Field(..., description="Full key, returned only on create/regenerate")

@@ -395,7 +395,9 @@ _NOTE_QUERY = """
 """
 
 
-def _select_passages(candidates: list[Dict[str, Any]], max_passages: int) -> list[Dict[str, Any]]:
+def _select_passages(
+    candidates: list[Dict[str, Any]], max_passages: int, insight_boost: float = 0.0
+) -> list[Dict[str, Any]]:
     """Most similar passages, but first the best one of every item.
 
     Plain top-k lets raw text crowd everything else out (text chunks usually
@@ -403,7 +405,14 @@ def _select_passages(candidates: list[Dict[str, Any]], max_passages: int) -> lis
     every insight and every note first gets its best passage, then the
     remaining slots go by similarity.
     """
-    ranked = sorted(candidates, key=lambda c: -c["similarity"])
+    # insight_boost only affects ranking: insights are summaries and score
+    # lower than the raw text they summarise, so callers that want them first
+    # (the website widget) lift them without altering the reported similarity.
+    def rank(candidate: Dict[str, Any]) -> float:
+        boost = insight_boost if candidate["kind"] == "insight" else 0.0
+        return -(candidate["similarity"] + boost)
+
+    ranked = sorted(candidates, key=rank)
     picked: list[Dict[str, Any]] = []
     seen_items: set[str] = set()
     for candidate in ranked:
@@ -417,7 +426,8 @@ def _select_passages(candidates: list[Dict[str, Any]], max_passages: int) -> lis
             break
         if candidate not in picked:
             picked.append(candidate)
-    return sorted(picked, key=lambda c: -c["similarity"])
+    # the model reads them in this order: boosted kinds come first too
+    return sorted(picked, key=rank)
 
 
 async def build_retrieval_context(
@@ -429,6 +439,8 @@ async def build_retrieval_context(
     note_ids: Optional[list[str]] = None,
     max_passages: int = RETRIEVAL_DEFAULT_PASSAGES,
     min_similarity: float = RETRIEVAL_MIN_SIMILARITY,
+    insight_boost: float = 0.0,
+    chunk_limit: Optional[int] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """Context made of the passages most similar to ``query``.
 
@@ -496,7 +508,14 @@ async def build_retrieval_context(
     await fetch(_INSIGHT_QUERY, "sources", full + insight_only, "insight")
     await fetch(_NOTE_QUERY, "notes", notes, "note")
 
-    picked = _select_passages(candidates, max_passages)
+    if chunk_limit is not None:
+        # keep only the best raw-text passages; insights are not capped
+        chunks = sorted(
+            (c for c in candidates if c["kind"] == "chunk"), key=lambda c: -c["similarity"]
+        )[:chunk_limit]
+        candidates = [c for c in candidates if c["kind"] != "chunk"] + chunks
+
+    picked = _select_passages(candidates, max_passages, insight_boost)
     entries: Dict[str, Dict[str, Any]] = {}
     for passage in picked:  # most similar first
         entry = entries.get(passage["id"])
