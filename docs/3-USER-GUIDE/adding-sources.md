@@ -350,14 +350,19 @@ Example: "Keep this in notebook but don't use in this conversation"
 
 ### Following Everything in Progress: the Activity Page
 
-**Activity** in the sidebar (with a badge counting the jobs in progress) lists every background job, grouped by the source it works on, so you can follow a file through its pipeline: **extraction → transformations → saving insights → embeddings**. Cloud syncs, note embeddings and podcasts appear there too.
+**Activity** in the sidebar (with a badge counting the jobs in progress) lists every background job so you can follow a file through its pipeline: **extraction → transformations → saving insights → embeddings**. Cloud syncs, note embeddings, podcasts and embedding rebuilds appear there too. The page refreshes every 2 seconds while something is running.
 
+- **Two views.** *By item* groups the jobs by the source (or cloud link, podcast…) they work on. *By phase* groups them by pipeline stage, e.g. every transformation running right now, across all sources. The chips above the lists (*Transformation · 3 running · 5 queued*) filter both views to one stage; the search box matches titles, transformation names and file names.
+- **Live progress.** Each running job shows what it is doing right now — *Extracting content · report.pdf (docling)*, *Waiting for the AI model · Summary*, *Embedding chunks 120/400*, *Importing 7/30 · /Research/paper.pdf*, *Generating audio* — with a progress bar when the step has a counter, and a badge when the job is on a retry attempt.
+- **Details (ⓘ).** Opens everything about one job, refreshed every second while it runs: current step, the timeline of its steps with timestamps, queue/start/end times, duration, attempts, notebooks, the full error, and the job input and output.
 - **In progress** shows queued jobs (waiting for the worker) and running ones with their elapsed time. If jobs stay queued and nothing runs, the worker is probably stopped (`make worker-start`).
 - **Recent** shows what finished in the last hour, day or week, with duration and the error of failed jobs; a failed extraction can be retried from there.
-- **Stop** a single job, **Stop all** jobs of a source or cloud link, or **Stop and delete source** to drop a file you didn't mean to add. A queued job never starts; a running one stops within a few seconds (it shows *Stopping…* meanwhile). Stopping is best effort: work already handed to a follow-up job (e.g. an embedding queued by the extraction) keeps its own row and can be stopped too.
+- **Stopping.** **Stop** a single job; tick several jobs (or a whole group) and **Stop selected**; **Stop all** the jobs of a source or cloud link, **Stop phase** in the *By phase* view, or **Stop everything** to stop all queued and running processing at once (after a confirmation). **Stop and delete source** drops a file you didn't mean to add. A queued job never starts; a running one stops within a few seconds (it shows *Stopping…* meanwhile). Stopping is best effort: work already handed to a follow-up job (e.g. an embedding queued by the extraction) keeps its own row and can be stopped too.
 - **Remove from list** (×) or **Clear finished** hides finished jobs; nothing is deleted.
 
-Timings are recorded for jobs created after this feature was installed.
+Transformations chosen at upload (or by a notebook's defaults) run as **one job each** after the extraction, so each one can be followed and stopped on its own; a failing transformation does not fail the source.
+
+Timings and live steps are recorded for jobs created after these features were installed.
 
 ### What the Status Indicators Mean
 

@@ -1,12 +1,11 @@
+import asyncio
 import operator
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from content_core import ContentCoreConfig, extract_content
 from content_core.common import ExtractionOutput
-from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
 from loguru import logger
 from typing_extensions import Annotated, TypedDict
 
@@ -14,7 +13,7 @@ from open_notebook.ai.models import Model, ModelManager
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
-from open_notebook.graphs.transformation import graph as transform_graph
+from open_notebook.utils.job_progress import report_progress
 from open_notebook.utils.runtime_capabilities import engine_runtime_missing
 
 # Default preferred languages for YouTube transcript selection, used when
@@ -49,11 +48,6 @@ class SourceState(TypedDict):
     embed: bool
 
 
-class TransformationState(TypedDict):
-    source: Source
-    transformation: Transformation
-
-
 def _usable_engine(engine: str, kind: str) -> str:
     """Return ``engine``, or "auto" when its opt-in runtime is not installed.
 
@@ -73,6 +67,16 @@ def _usable_engine(engine: str, kind: str) -> str:
         f"Set {missing_env_var}=true to enable it (see ADR-007)."
     )
     return "auto"
+
+
+def _extraction_label(content_state: Dict[str, Any], config_kwargs: Dict[str, Any]) -> str:
+    """What is being extracted and with which engine, for the activity view."""
+    if content_state.get("url"):
+        return f"{content_state['url']} ({config_kwargs.get('url_engine', 'auto')})"
+    if content_state.get("file_path"):
+        name = os.path.basename(content_state["file_path"])
+        return f"{name} ({config_kwargs.get('document_engine', 'auto')})"
+    return f"text ({len(content_state.get('content') or '')} chars)"
 
 
 async def content_process(state: SourceState) -> dict:
@@ -148,6 +152,10 @@ async def content_process(state: SourceState) -> dict:
         f"docling_vision={config_kwargs.get('docling_vision', 'auto')})"
     )
 
+    await report_progress(
+        "extracting",
+        _extraction_label(content_state, config_kwargs),
+    )
     processed = await extract_content(
         url=content_state.get("url"),
         file_path=content_state.get("file_path"),
@@ -202,6 +210,7 @@ async def save_source(state: SourceState) -> dict:
     content_state = state["content_state"]
     extraction = state["extraction"]
 
+    await report_progress("saving_content", f"{len(extraction.content or '')} chars")
     # Get existing source using the provided source_id
     source = await Source.get(state["source_id"])
     if not source:
@@ -226,6 +235,7 @@ async def save_source(state: SourceState) -> dict:
     if state["embed"]:
         if source.full_text and source.full_text.strip():
             logger.debug("Embedding content for vector search")
+            await report_progress("queueing_embedding")
             await source.vectorize()
         else:
             logger.warning(
@@ -235,48 +245,37 @@ async def save_source(state: SourceState) -> dict:
     return {"source": source}
 
 
-def trigger_transformations(state: SourceState, config: RunnableConfig) -> List[Send]:
-    if len(state["apply_transformations"]) == 0:
-        return []
+async def queue_transformations(state: SourceState) -> dict:
+    """Queue one `run_transformation` job per transformation.
 
+    Each transformation is its own background job (ADR-011) so the activity
+    view can show, follow and stop it individually, and a failing one neither
+    fails nor re-runs the extraction.
+    """
     to_apply = state["apply_transformations"]
-    logger.debug(f"Applying transformations {to_apply}")
-
-    return [
-        Send(
-            "transform_content",
-            {
-                "source": state["source"],
-                "transformation": t,
-            },
-        )
-        for t in to_apply
-    ]
-
-
-async def transform_content(state: TransformationState) -> Optional[dict]:
     source = state["source"]
-    content = source.full_text
-    if not content:
-        return None
-    transformation: Transformation = state["transformation"]
+    if not to_apply or not source.full_text:
+        return {"transformation": []}
 
-    logger.debug(f"Applying transformation {transformation.name}")
-    # LangGraph accepts a partial state dict at runtime, but its typed
-    # overloads require the full state type (langgraph typing limitation).
-    result = await transform_graph.ainvoke(  # type: ignore[call-overload]
-        dict(input_text=content, transformation=transformation),
-        config=RunnableConfig(configurable={"model_id": transformation.model_id}),
-    )
-    await source.add_insight(transformation.title, result["output"], transformation.id)
-    return {
-        "transformation": [
-            {
-                "output": result["output"],
-                "transformation_name": transformation.name,
-            }
-        ]
-    }
+    from surreal_commands import submit_command
+
+    total = len(to_apply)
+    queued = []
+    for index, transformation in enumerate(to_apply, start=1):
+        await report_progress(
+            "queueing_transformations", transformation.title, current=index, total=total
+        )
+        command_id = await asyncio.to_thread(
+            submit_command,
+            "open_notebook",
+            "run_transformation",
+            {"source_id": str(source.id), "transformation_id": str(transformation.id)},
+        )
+        queued.append(
+            {"transformation_name": transformation.name, "command_id": str(command_id)}
+        )
+    logger.info(f"Queued {total} transformation job(s) for source {source.id}")
+    return {"transformation": queued}
 
 
 # Create and compile the workflow
@@ -285,14 +284,12 @@ workflow = StateGraph(SourceState)
 # Add nodes
 workflow.add_node("content_process", content_process)
 workflow.add_node("save_source", save_source)
-workflow.add_node("transform_content", transform_content)
+workflow.add_node("queue_transformations", queue_transformations)
 # Define the graph edges
 workflow.add_edge(START, "content_process")
 workflow.add_edge("content_process", "save_source")
-workflow.add_conditional_edges(
-    "save_source", trigger_transformations, ["transform_content"]
-)
-workflow.add_edge("transform_content", END)
+workflow.add_edge("save_source", "queue_transformations")
+workflow.add_edge("queue_transformations", END)
 
 # Compile the graph
 source_graph = workflow.compile()

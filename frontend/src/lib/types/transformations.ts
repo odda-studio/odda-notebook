@@ -1,3 +1,5 @@
+import type { LlmUsage } from '@/lib/types/llm-usage'
+
 export interface Transformation {
   id: string
   name: string
@@ -8,6 +10,8 @@ export interface Transformation {
   model_id: string | null
   /** null = ungrouped */
   group_id: string | null
+  /** Output token budget; null = automatic (8192, 32768 for reasoning models). */
+  max_tokens: number | null
   created: string
   updated: string
 }
@@ -21,6 +25,7 @@ export interface CreateTransformationRequest {
   model_id?: string | null
   /** null/omitted = ungrouped */
   group_id?: string | null
+  max_tokens?: number | null
 }
 
 export interface UpdateTransformationRequest {
@@ -32,6 +37,8 @@ export interface UpdateTransformationRequest {
   model_id?: string | null
   /** Explicit null ungroups; omitted leaves the group unchanged. */
   group_id?: string | null
+  /** Explicit null goes back to automatic; omitted keeps it. */
+  max_tokens?: number | null
 }
 
 export interface ExecuteTransformationRequest {
@@ -44,6 +51,8 @@ export interface ExecuteTransformationResponse {
   output: string
   transformation_id: string
   model_id: string | null
+  /** Token usage of the model call. */
+  usage?: LlmUsage | null
 }
 
 export interface DefaultPrompt {

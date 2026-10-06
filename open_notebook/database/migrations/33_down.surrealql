@@ -1,0 +1,3 @@
+-- Rollback Migration 33: remove the per-transformation output token budget
+
+REMOVE FIELD IF EXISTS max_tokens ON TABLE transformation;

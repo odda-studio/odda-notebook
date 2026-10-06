@@ -17,6 +17,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import { LlmUsageDetail } from '@/components/common/LlmUsageView'
+import type { LlmUsage } from '@/lib/types/llm-usage'
 
 interface TransformationPlaygroundProps {
   transformations: Transformation[] | undefined
@@ -30,6 +32,7 @@ export function TransformationPlayground({ transformations, groups, selectedTran
   const [inputText, setInputText] = useState('')
   const [modelId, setModelId] = useState('')
   const [output, setOutput] = useState('')
+  const [usage, setUsage] = useState<LlmUsage | null>(null)
   
   const executeTransformation = useExecuteTransformation()
 
@@ -45,6 +48,7 @@ export function TransformationPlayground({ transformations, groups, selectedTran
     })
 
     setOutput(result.output)
+    setUsage(result.usage ?? null)
   }
 
   const canExecute = selectedId && modelId && inputText.trim() && !executeTransformation.isPending
@@ -116,6 +120,13 @@ export function TransformationPlayground({ transformations, groups, selectedTran
               )}
             </Button>
           </div>
+
+          {usage && (
+            <div className="space-y-2">
+              <span className="text-sm font-medium leading-none">{t('llmUsage.title')}</span>
+              <LlmUsageDetail usage={usage} />
+            </div>
+          )}
 
           {output && (
             <div className="space-y-2">

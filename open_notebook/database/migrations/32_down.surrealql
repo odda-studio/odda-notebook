@@ -1,0 +1,5 @@
+-- Rollback Migration 32: remove job progress fields
+
+REMOVE FIELD IF EXISTS attempts ON TABLE command;
+REMOVE FIELD IF EXISTS progress_log ON TABLE command;
+REMOVE FIELD IF EXISTS progress ON TABLE command;

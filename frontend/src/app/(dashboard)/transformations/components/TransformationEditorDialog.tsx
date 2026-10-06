@@ -41,6 +41,14 @@ const transformationSchema = z.object({
   apply_default: z.boolean().optional(),
   model_id: z.string().nullable().optional(),
   group_id: z.string().nullable().optional(),
+  /** Empty = automatic. Kept as text so the input can be cleared. */
+  max_tokens: z
+    .string()
+    .optional()
+    .refine(
+      (value) => !value || (/^\d+$/.test(value) && Number(value) >= 256 && Number(value) <= 200000),
+      { message: 'transformations.maxTokensInvalid' }
+    ),
 })
 
 type TransformationFormData = z.infer<typeof transformationSchema>
@@ -62,6 +70,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
   const promptId = useId()
   const modelId = useId()
   const groupId = useId()
+  const maxTokensId = useId()
   const isEditing = Boolean(transformation)
   const { data: fetchedTransformation, isLoading } = useTransformation(transformation?.id ?? '', {
     enabled: open && Boolean(transformation?.id),
@@ -91,6 +100,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
       apply_default: false,
       model_id: null,
       group_id: null,
+      max_tokens: '',
     },
   })
 
@@ -104,6 +114,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
         apply_default: false,
         model_id: null,
         group_id: null,
+        max_tokens: '',
       })
       return
     }
@@ -117,11 +128,13 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
       apply_default: source?.apply_default ?? false,
       model_id: source?.model_id ?? null,
       group_id: source ? source.group_id ?? null : defaultGroupId,
+      max_tokens: source?.max_tokens ? String(source.max_tokens) : '',
     })
   }, [open, transformation, fetchedTransformation, defaultGroupId, reset])
 
   const onSubmit = async (data: TransformationFormData) => {
     const selectedGroupId = data.group_id || null
+    const maxTokens = data.max_tokens ? Number(data.max_tokens) : null
     if (transformation) {
       const originalGroupId = (fetchedTransformation ?? transformation).group_id ?? null
       await updateTransformation.mutateAsync({
@@ -133,6 +146,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
           prompt: data.prompt,
           apply_default: Boolean(data.apply_default),
           model_id: data.model_id || null,
+          max_tokens: maxTokens,
           // Only send group_id when it changed (null explicitly ungroups).
           ...(selectedGroupId !== originalGroupId ? { group_id: selectedGroupId } : {}),
         },
@@ -147,6 +161,7 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
         apply_default: Boolean(data.apply_default),
         model_id: data.model_id || null,
         group_id: selectedGroupId,
+        max_tokens: maxTokens,
       })
     }
 
@@ -252,6 +267,33 @@ export function TransformationEditorDialog({ open, onOpenChange, transformation,
                       )}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <Label htmlFor={maxTokensId} className="text-sm font-medium">
+                    {t('transformations.maxTokens')}
+                  </Label>
+                  <Controller
+                    control={control}
+                    name="max_tokens"
+                    render={({ field }) => (
+                      <Input
+                        id={maxTokensId}
+                        {...field}
+                        value={field.value ?? ''}
+                        inputMode="numeric"
+                        placeholder={t('transformations.maxTokensPlaceholder')}
+                        autoComplete="off"
+                        className="w-full sm:w-56"
+                      />
+                    )}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('transformations.maxTokensHelp')}
+                  </p>
+                  {errors.max_tokens && (
+                    <p className="mt-1 text-xs text-destructive">{t('transformations.maxTokensInvalid')}</p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

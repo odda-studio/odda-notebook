@@ -1,0 +1,4 @@
+-- Rollback Migration 34: remove LLM token usage fields
+
+REMOVE FIELD IF EXISTS usage ON TABLE source_insight;
+REMOVE FIELD IF EXISTS llm_usage ON TABLE command;

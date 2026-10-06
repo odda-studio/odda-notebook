@@ -14,6 +14,7 @@ import {
 } from '@/lib/hooks/use-integrations'
 import type { IntegrationAccount, IntegrationProvider } from '@/lib/api/integrations'
 import { ProviderAppConfigDialog } from './ProviderAppConfigDialog'
+import { RemoveCloudDialog } from './RemoveCloudDialog'
 import { ProviderIcon } from './integration-utils'
 
 interface ProviderCardProps {
@@ -48,11 +49,12 @@ export function ProviderCard({ provider, accounts }: ProviderCardProps) {
     })
   }
 
-  const handleDisconnect = () => {
+  const handleDisconnect = (deleteSources: boolean) => {
     if (!accountToDisconnect) return
-    disconnect.mutate(accountToDisconnect.id, {
-      onSettled: () => setAccountToDisconnect(null),
-    })
+    disconnect.mutate(
+      { accountId: accountToDisconnect.id, deleteSources },
+      { onSettled: () => setAccountToDisconnect(null) }
+    )
   }
 
   return (
@@ -197,7 +199,7 @@ export function ProviderCard({ provider, accounts }: ProviderCardProps) {
         isLoading={deleteConfig.isPending}
       />
 
-      <ConfirmDialog
+      <RemoveCloudDialog
         open={!!accountToDisconnect}
         onOpenChange={open => {
           if (!open) setAccountToDisconnect(null)
@@ -208,7 +210,9 @@ export function ProviderCard({ provider, accounts }: ProviderCardProps) {
           count: accountToDisconnect?.sync_folder_count ?? 0,
         })}
         confirmText={t('integrations.disconnect')}
-        confirmVariant="destructive"
+        deleteLabel={
+          accountToDisconnect?.sync_folder_count ? t('integrations.alsoDeleteSources') : undefined
+        }
         onConfirm={handleDisconnect}
         isLoading={disconnect.isPending}
       />

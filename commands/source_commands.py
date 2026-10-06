@@ -8,8 +8,9 @@ from surreal_commands import CommandInput, CommandOutput, command
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import ConfigurationError, ContextLengthExceededError
+from open_notebook.exceptions import PERMANENT_JOB_ERRORS
 from open_notebook.utils.job_cancellation import cancellable
+from open_notebook.utils.job_progress import report_progress
 
 try:
     from open_notebook.graphs.source import source_graph
@@ -44,7 +45,7 @@ class SourceProcessingOutput(CommandOutput):
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 120,  # Allow queue to drain
-        "stop_on": [ValueError, ConfigurationError, ContextLengthExceededError],  # Don't retry validation/config errors
+        "stop_on": PERMANENT_JOB_ERRORS,  # Don't retry what can't succeed (validation, auth, config)
         "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
     },
 )
@@ -63,6 +64,7 @@ async def process_source_command(
         logger.info(f"Transformations: {input_data.transformations}")
         logger.info(f"Embed: {input_data.embed}")
 
+        await report_progress("preparing")
         # 1. Load transformation objects from IDs
         transformations = []
         for trans_id in input_data.transformations:
@@ -107,27 +109,21 @@ async def process_source_command(
 
         processed_source = result["source"]
 
-        # 4. Gather processing results (notebook associations handled by source_graph)
-        # Note: embedding is fire-and-forget (async job), so we can't query the
-        # count here — it hasn't completed yet. The embed_source_command logs
-        # the actual count when it finishes.
-        insights_list = await processed_source.get_insights()
-        insights_created = len(insights_list)
-
+        # 4. Embedding and transformations are follow-up jobs (fire-and-forget),
+        # tracked individually in the activity view - nothing to count here.
         processing_time = time.time() - start_time
         embed_status = "submitted" if input_data.embed else "skipped"
         logger.info(
-            f"Successfully processed source: {processed_source.id} in {processing_time:.2f}s"
-        )
-        logger.info(
-            f"Created {insights_created} insights, embedding {embed_status}"
+            f"Successfully processed source: {processed_source.id} in {processing_time:.2f}s "
+            f"({len(result.get('transformation') or [])} transformation job(s) queued, "
+            f"embedding {embed_status})"
         )
 
         return SourceProcessingOutput(
             success=True,
             source_id=str(processed_source.id),
             embedded_chunks=0,
-            insights_created=insights_created,
+            insights_created=0,
             processing_time=processing_time,
         )
 
@@ -178,7 +174,7 @@ class RunTransformationOutput(CommandOutput):
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError, ContextLengthExceededError],  # Don't retry validation/config errors
+        "stop_on": PERMANENT_JOB_ERRORS,  # Don't retry what can't succeed (validation, auth, config)
         "retry_log_level": "warning",
     },
 )
@@ -210,6 +206,7 @@ async def run_transformation_command(
             f"on source {input_data.source_id}"
         )
 
+        await report_progress("preparing")
         # Load source
         source = await Source.get(input_data.source_id)
         if not source:
@@ -221,6 +218,9 @@ async def run_transformation_command(
             raise ValueError(
                 f"Transformation '{input_data.transformation_id}' not found"
             )
+        if not source.full_text:
+            raise ValueError("The source has no text to transform yet")
+
 
         # Run transformation graph (includes LLM call + insight creation).
         # LangGraph accepts a partial state dict at runtime, but its typed
@@ -244,19 +244,14 @@ async def run_transformation_command(
         )
 
     except ValueError as e:
-        # Validation errors are permanent failures - don't retry
-        processing_time = time.time() - start_time
+        # Permanent failure: re-raise so the job is marked `failed` (stop_on
+        # prevents retries) and the activity view shows the error, instead of
+        # a `completed` job carrying success=False.
         logger.error(
             f"Failed to run transformation {input_data.transformation_id} "
             f"on source {input_data.source_id}: {e}"
         )
-        return RunTransformationOutput(
-            success=False,
-            source_id=input_data.source_id,
-            transformation_id=input_data.transformation_id,
-            processing_time=processing_time,
-            error_message=str(e),
-        )
+        raise
     except Exception as e:
         # Transient failure - will be retried (surreal-commands logs final failure)
         logger.debug(

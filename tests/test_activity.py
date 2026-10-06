@@ -167,3 +167,82 @@ def test_dismiss_only_finished_jobs():
         assert client.post("/api/activity/jobs/command:1/dismiss").status_code == 400
     with patch.object(activity_service, "repo_query", AsyncMock(return_value=[{"id": "command:1"}])):
         assert client.post("/api/activity/jobs/command:1/dismiss").json() == {"dismissed": 1}
+
+
+@pytest.mark.asyncio
+async def test_job_detail_truncates_inputs_and_keeps_the_timeline():
+    row = command("command:1", "process_source", "running",
+                  {"source_id": "source:a", "content_state": {"content": "x" * 5000}})
+    row.update(
+        progress={"step": "extracting", "detail": "a.pdf", "at": "2026-09-29T10:00:01Z"},
+        progress_log=[{"step": "started"}, {"step": "extracting", "detail": "a.pdf"}],
+        attempts=2, result=None,
+    )
+
+    async def query(sql, params=None):
+        if sql.startswith("SELECT * FROM $id"):
+            return [row]
+        if "FROM source " in sql:
+            return [{"id": "source:a", "label": "CV.pdf"}]
+        if "FROM reference" in sql:
+            return ["notebook:n"]
+        if "FROM notebook " in sql:
+            return [{"id": "notebook:n", "label": "Hiring"}]
+        return []
+
+    with patch.object(activity_service, "repo_query", side_effect=query):
+        job = await activity_service.get_job("command:1")
+
+    assert job.progress and job.progress.step == "extracting" and job.attempts == 2
+    assert [p.step for p in job.progress_log] == ["started", "extracting"]
+    assert job.args["content_state"]["content"].endswith("(5000 chars)")
+    assert job.notebooks == ["Hiring"]
+
+
+@pytest.mark.asyncio
+async def test_finished_jobs_drop_their_last_step():
+    row = command("command:1", "embed_source", "completed", {"source_id": "source:a"},
+                  finished_at="2026-09-29T10:01:00Z")
+    row["progress"] = {"step": "embedding", "current": 10, "total": 10}
+    with patch.object(activity_service, "repo_query",
+                      side_effect=fake_db(recent=[row], sources=[{"id": "source:a", "label": "A"}])):
+        job = (await activity_service.get_activity()).recent[0]
+    assert job.progress is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_jobs_by_stage_all_and_selection():
+    async def query(sql, params=None):
+        assert "status IN $statuses" in sql
+        names = params.get("names")
+        rows = [{"id": "command:1", "name": "run_transformation"},
+                {"id": "command:2", "name": "embed_source"}]
+        if names is None:
+            return rows
+        if "NOT IN" in sql:
+            return [r for r in rows if r["name"] not in names]
+        return [r for r in rows if r["name"] in names]
+
+    cancel = AsyncMock(return_value="running")
+    with (
+        patch.object(activity_service, "repo_query", side_effect=query),
+        patch.object(activity_service, "request_cancel", cancel),
+    ):
+        CancelJobsRequest = activity_service.CancelJobsRequest
+        stage = await activity_service.cancel_jobs(CancelJobsRequest(stage="transformation"))
+        assert stage.canceled == 1 and cancel.await_args_list[-1].args[0] == "command:1"
+        everything = await activity_service.cancel_jobs(CancelJobsRequest(all=True))
+        assert (everything.canceled, everything.stopping) == (2, 2)
+        picked = await activity_service.cancel_jobs(CancelJobsRequest(job_ids=["command:9"]))
+        assert picked.canceled == 1 and cancel.await_args_list[-1].args[0] == "command:9"
+
+
+def test_cancel_jobs_needs_exactly_one_selector():
+    from api.main import app
+
+    client = TestClient(app)
+    assert client.post("/api/activity/cancel", json={}).status_code == 400
+    assert client.post("/api/activity/cancel",
+                       json={"all": True, "stage": "embedding"}).status_code == 400
+    with patch.object(activity_service, "repo_query", AsyncMock(return_value=[])):
+        assert client.post("/api/activity/cancel", json={"stage": "nope"}).status_code == 400

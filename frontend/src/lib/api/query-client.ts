@@ -38,4 +38,5 @@ export const QUERY_KEYS = {
   languages: ['languages'] as const,
   activity: (hours: number) => ['activity', 'list', hours] as const,
   activitySummary: ['activity', 'summary'] as const,
+  activityJob: (id: string) => ['activity', 'job', id] as const,
 }

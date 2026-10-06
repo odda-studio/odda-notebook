@@ -18,6 +18,7 @@ import numpy as np
 from loguru import logger
 
 from .chunking import CHUNK_SIZE, ContentType, chunk_text
+from .job_progress import report_progress
 from .token_utils import token_count
 
 
@@ -170,6 +171,8 @@ async def generate_embeddings(
         start = batch_idx * EMBEDDING_BATCH_SIZE
         end = start + EMBEDDING_BATCH_SIZE
         batch = texts[start:end]
+        # no-op outside a background job (e.g. search queries)
+        await report_progress("embedding", model_name, current=start, total=len(texts))
 
         for attempt in range(1, EMBEDDING_MAX_RETRIES + 1):
             try:
@@ -198,6 +201,7 @@ async def generate_embeddings(
                     ) from e
 
     logger.debug(f"Generated {len(all_embeddings)} embeddings in {total_batches} batch(es)")
+    await report_progress("embedding", model_name, current=len(texts), total=len(texts))
     return all_embeddings
 
 

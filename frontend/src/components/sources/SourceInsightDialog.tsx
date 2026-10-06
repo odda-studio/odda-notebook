@@ -10,6 +10,7 @@ import { useInsight } from '@/lib/hooks/use-insights'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { ContentUnavailable } from '@/components/common/ContentUnavailable'
+import { LlmUsageDetail, LlmUsageInline } from '@/components/common/LlmUsageView'
 import { isNotFoundError } from '@/lib/utils/error-handler'
 
 interface SourceInsightDialogProps {
@@ -134,9 +135,20 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
                 onClose={() => onOpenChange(false)}
               />
             ) : displayInsight ? (
-              <MarkdownRenderer>
-                {displayInsight.content}
-              </MarkdownRenderer>
+              <>
+                <MarkdownRenderer>
+                  {displayInsight.content}
+                </MarkdownRenderer>
+                {fetchedInsight?.usage && (
+                  <details className="mt-4 space-y-2 border-t pt-3">
+                    <summary className="cursor-pointer text-sm">
+                      <span className="font-medium">{t('llmUsage.title')}</span>{' '}
+                      <LlmUsageInline calls={[fetchedInsight.usage]} />
+                    </summary>
+                    <LlmUsageDetail usage={fetchedInsight.usage} />
+                  </details>
+                )}
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">{t('sources.noInsightSelected')}</p>
             )}

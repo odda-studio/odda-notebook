@@ -574,72 +574,59 @@ class TestContentProcessDeleteSource:
         assert config.document_engine == "simple"
 
 
+class TestQueueTransformations:
+    """Ingestion queues one run_transformation job per transformation (ADR-011)."""
+
+    @pytest.mark.asyncio
+    async def test_one_job_per_transformation(self):
+        from open_notebook.graphs.source import SourceState, queue_transformations
+
+        source = MagicMock(spec=Source)
+        source.id = "source:1"
+        source.full_text = "body"
+        transformations = [
+            MagicMock(id="transformation:a", title="A"),
+            MagicMock(id="transformation:b", title="B"),
+        ]
+        for t, name in zip(transformations, ("a", "b")):
+            t.name = name
+        state = {"source": source, "apply_transformations": transformations}
+
+        with patch(
+            "surreal_commands.submit_command", side_effect=["command:1", "command:2"]
+        ) as submit:
+            result = await queue_transformations(cast(SourceState, state))
+
+        assert [c.args for c in submit.call_args_list] == [
+            ("open_notebook", "run_transformation",
+             {"source_id": "source:1", "transformation_id": "transformation:a"}),
+            ("open_notebook", "run_transformation",
+             {"source_id": "source:1", "transformation_id": "transformation:b"}),
+        ]
+        assert [t["command_id"] for t in result["transformation"]] == ["command:1", "command:2"]
+
+    @pytest.mark.asyncio
+    async def test_nothing_queued_without_text(self):
+        from open_notebook.graphs.source import SourceState, queue_transformations
+
+        source = MagicMock(spec=Source)
+        source.full_text = ""
+        state = {"source": source, "apply_transformations": [MagicMock()]}
+        with patch("surreal_commands.submit_command") as submit:
+            assert await queue_transformations(cast(SourceState, state)) == {"transformation": []}
+        submit.assert_not_called()
+
+
 # ============================================================================
 # TEST SUITE 6: Per-transformation model_id forwarding (#1137)
 # ============================================================================
 
 
 class TestTransformationModelIdForwarding:
-    """Both call sites must forward transformation.model_id into the graph via
-    config.configurable so per-transformation model selection is honored (#1137).
+    """run_transformation_command - the only call site since ingestion queues
+    one job per transformation (ADR-011) - must forward transformation.model_id
+    into the graph via config.configurable (#1137).
     """
-
-    @pytest.mark.asyncio
-    @patch(
-        "open_notebook.graphs.source.transform_graph.ainvoke", new_callable=AsyncMock
-    )
-    async def test_source_graph_forwards_model_id(self, mock_ainvoke):
-        """open_notebook.graphs.source.transform_content forwards model_id."""
-        from open_notebook.domain.transformation import Transformation
-        from open_notebook.graphs.source import transform_content
-
-        mock_ainvoke.return_value = {"output": "result"}
-
-        mock_source = MagicMock(spec=Source)
-        mock_source.full_text = "some content"
-        mock_source.add_insight = AsyncMock()
-
-        transformation = MagicMock(spec=Transformation)
-        transformation.id = "transformation:1"
-        transformation.name = "summary"
-        transformation.title = "Summary"
-        transformation.model_id = "model:custom"
-
-        state = {"source": mock_source, "transformation": transformation}
-
-        await transform_content(state)  # type: ignore[arg-type]
-
-        mock_ainvoke.assert_awaited_once()
-        config = mock_ainvoke.await_args.kwargs["config"]
-        assert config["configurable"]["model_id"] == "model:custom"
-
-    @pytest.mark.asyncio
-    @patch(
-        "open_notebook.graphs.source.transform_graph.ainvoke", new_callable=AsyncMock
-    )
-    async def test_source_graph_forwards_none_model_id(self, mock_ainvoke):
-        """When model_id is unset (None), None is forwarded (falls back to default)."""
-        from open_notebook.domain.transformation import Transformation
-        from open_notebook.graphs.source import transform_content
-
-        mock_ainvoke.return_value = {"output": "result"}
-
-        mock_source = MagicMock(spec=Source)
-        mock_source.full_text = "some content"
-        mock_source.add_insight = AsyncMock()
-
-        transformation = MagicMock(spec=Transformation)
-        transformation.id = "transformation:1"
-        transformation.name = "summary"
-        transformation.title = "Summary"
-        transformation.model_id = None
-
-        state = {"source": mock_source, "transformation": transformation}
-
-        await transform_content(state)  # type: ignore[arg-type]
-
-        config = mock_ainvoke.await_args.kwargs["config"]
-        assert config["configurable"]["model_id"] is None
 
     @pytest.mark.asyncio
     @patch("commands.source_commands.transform_graph.ainvoke", new_callable=AsyncMock)
@@ -655,10 +642,13 @@ class TestTransformationModelIdForwarding:
         )
         from open_notebook.domain.transformation import Transformation
 
-        mock_source_get.return_value = MagicMock(spec=Source)
+        source = MagicMock(spec=Source)
+        source.full_text = "some content"
+        mock_source_get.return_value = source
 
         transformation = MagicMock(spec=Transformation)
         transformation.id = "transformation:1"
+        transformation.title = "Summary"
         transformation.model_id = "model:custom"
         mock_transformation_get.return_value = transformation
 

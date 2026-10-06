@@ -16,6 +16,7 @@ const mockCancelJob = vi.fn()
 const mockCancelTarget = vi.fn()
 const mockDismissJob = vi.fn()
 const mockDismissFinished = vi.fn()
+const mockCancelJobs = vi.fn()
 
 vi.mock('@/lib/hooks/use-activity', () => ({
   useActivity: vi.fn(),
@@ -23,6 +24,8 @@ vi.mock('@/lib/hooks/use-activity', () => ({
   useCancelTarget: () => ({ mutate: mockCancelTarget, isPending: false }),
   useDismissJob: () => ({ mutate: mockDismissJob, isPending: false }),
   useDismissFinished: () => ({ mutate: mockDismissFinished, isPending: false }),
+  useCancelJobs: () => ({ mutate: mockCancelJobs, isPending: false }),
+  useActivityJob: () => ({ data: undefined, isLoading: false, isError: false }),
 }))
 
 vi.mock('@/lib/api/sources', () => ({
@@ -55,6 +58,9 @@ function job(overrides: Partial<ActivityJob>): ActivityJob {
     detail: null,
     retryable: false,
     cancel_requested: false,
+    progress: null,
+    attempts: 1,
+    llm_usage: [],
     ...overrides,
   }
 }
@@ -262,6 +268,98 @@ describe('ActivityPage', () => {
       expect(mockDismissJob).toHaveBeenCalledWith('command:done')
       fireEvent.click(screen.getByText('activity.clearFinished'))
       expect(mockDismissFinished).toHaveBeenCalledWith(24)
+    })
+  })
+
+  describe('live progress, selection and bulk stop', () => {
+    beforeEach(() => {
+      mockCancelJobs.mockReset()
+    })
+
+    it('shows the live step with its counter and the retry attempt', () => {
+      mockData({
+        active: [
+          job({
+            stage: 'embedding',
+            attempts: 2,
+            progress: { step: 'embedding', detail: 'text-embedding-3', current: 40, total: 100, at: iso(500) },
+          }),
+        ],
+        counts: { active: 1, queued: 0, running: 1, failed_recent: 0 },
+      })
+      renderPage()
+      const progress = screen.getByTestId('activity-progress')
+      expect(within(progress).getByText('activity.steps.embedding')).toBeDefined()
+      expect(within(progress).getByText('40/100')).toBeDefined()
+      expect(screen.getByText('activity.attempt')).toBeDefined()
+    })
+
+    it('shows the token usage of the model calls, flagging an exhausted budget', () => {
+      mockData({
+        recent: [
+          job({
+            id: 'command:t', stage: 'transformation', status: 'failed', finished_at: iso(1_000),
+            llm_usage: [{
+              model: 'gpt-5-nano', input_tokens: 5141, output_tokens: 8192, reasoning_tokens: 8192,
+              cached_input_tokens: 0, total_tokens: 13333, max_output_tokens: 8192,
+              prompt_tokens_estimate: 5100, finish_reason: 'length', duration_seconds: 90,
+            }],
+          }),
+        ],
+      })
+      renderPage()
+      const usage = screen.getByTestId('llm-usage-inline')
+      expect(usage.className).toContain('text-destructive')
+      expect(within(usage).getByText('llmUsage.inShort')).toBeDefined()
+      expect(within(usage).getByText('llmUsage.budgetShort')).toBeDefined()
+    })
+
+    it('stops the selected jobs', () => {
+      mockData({
+        active: [job({ id: 'command:1' }), job({ id: 'command:2', target_id: 'source:b', target_title: 'Beta' })],
+        counts: { active: 2, queued: 0, running: 2, failed_recent: 0 },
+      })
+      renderPage()
+      fireEvent.click(screen.getAllByRole('checkbox', { name: 'activity.selectJob' })[1])
+      const bar = screen.getByTestId('activity-selection-bar')
+      fireEvent.click(within(bar).getByText('activity.stopSelected'))
+      expect(mockCancelJobs.mock.calls[0][0]).toEqual({ job_ids: ['command:2'] })
+    })
+
+    it('stops everything after confirmation', () => {
+      mockData({
+        active: [job({ id: 'command:1' }), job({ id: 'command:2', cancel_requested: true })],
+        counts: { active: 2, queued: 0, running: 2, failed_recent: 0 },
+      })
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'activity.stopEverything' }))
+      const dialog = screen.getByRole('alertdialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'activity.stopEverything' }))
+      expect(mockCancelJobs.mock.calls[0][0]).toEqual({ all: true })
+    })
+
+    it('groups by phase and filters by stage chip', () => {
+      mockData({
+        active: [
+          job({ id: 'command:1', stage: 'transformation', detail: 'Summary' }),
+          job({ id: 'command:2', stage: 'transformation', detail: 'Skills', target_id: 'source:b', target_title: 'Beta' }),
+          job({ id: 'command:3', stage: 'embedding' }),
+        ],
+        counts: { active: 3, queued: 0, running: 3, failed_recent: 0 },
+      })
+      renderPage()
+
+      fireEvent.click(within(screen.getByTestId('activity-stage-chips')).getByText('activity.stages.transformation'))
+      expect(screen.getAllByTestId('activity-active-job')).toHaveLength(2)
+
+      fireEvent.mouseDown(screen.getByRole('tab', { name: /activity.viewByPhase/ }))
+      fireEvent.click(screen.getByRole('tab', { name: /activity.viewByPhase/ }))
+      const groups = screen.getAllByTestId('activity-group')
+      expect(groups).toHaveLength(1)
+      expect(within(groups[0]).getByText('Beta')).toBeDefined()
+
+      fireEvent.click(within(groups[0]).getByText('activity.stopPhase'))
+      expect(mockCancelJobs.mock.calls[0][0]).toEqual({ job_ids: ['command:1', 'command:2'] })
     })
   })
 })

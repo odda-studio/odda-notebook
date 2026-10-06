@@ -102,6 +102,16 @@ Best for: Literature review, research planning
 6. Your transformation appears in the list
 ```
 
+### Model and Output Budget
+
+Each transformation can use its own **model** (empty = the default transformation model) and **Max output tokens** (empty = automatic: 8192, or 32768 for reasoning models such as o1/o3/o4 and gpt-5).
+
+**Token usage is recorded for every run** — model, input tokens (plus the local estimate made before sending), output and reasoning tokens, cached input, the output budget and how much of it was used, finish reason (*length* = budget exhausted) and duration. You find it on the **Activity** page (on each transformation job, and in full in its ⓘ details, failed runs included), in the insight it produced (*Model usage* under the text) and in the **Playground** after each run.
+
+Setting *Max output tokens* above what the model supports (e.g. 16384 for gpt-4o) makes the run fail with *"The output token limit (…) is above what this model allows (…)"*: lower it or leave it empty.
+
+Reasoning models count their hidden reasoning in that budget. With a long prompt or a long source they can spend all of it thinking and return nothing: the job then fails at once with *"… used its whole output budget … and returned no text"*. Raise **Max output tokens**, pick a model without reasoning (e.g. gpt-4o-mini), or shorten the prompt.
+
 ### Prompt Template Tips
 
 **Be specific about format:**

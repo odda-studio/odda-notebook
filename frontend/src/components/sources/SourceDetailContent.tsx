@@ -751,7 +751,7 @@ function SourceDetailContentInner({
                 </div>
 
                 {/* Cloud storage origin + sync controls (only for cloud-imported sources) */}
-                <SourceCloudSyncSection sourceId={sourceId} />
+                <SourceCloudSyncSection sourceId={sourceId} onSourceDeleted={onClose} />
 
                 {/* Metadata */}
                 <div className="border-t border-border pt-5">

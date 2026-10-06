@@ -11,9 +11,11 @@ from urllib.parse import urlencode
 from loguru import logger
 from pydantic import SecretStr
 
+from api import activity_service
 from api.credentials_service import require_encryption_key
 from api.models import (
     BrowseResponse,
+    CloudRemovalResponse,
     GoogleExportFormats,
     IntegrationAccountResponse,
     IntegrationProviderResponse,
@@ -25,7 +27,9 @@ from api.models import (
     RemoteItemResponse,
     RemoteSearchResponse,
     SourceCloudInfoResponse,
+    SyncedFileBulkAction,
     SyncedFileResponse,
+    SyncedFilesBulkResponse,
     SyncLinkResponse,
     SyncLinkUpdate,
 )
@@ -278,9 +282,47 @@ async def list_accounts() -> List[IntegrationAccountResponse]:
     ]
 
 
-async def delete_account(account_id: str) -> None:
+async def _stop_link(link_id: str) -> int:
+    """Stop the link's queued/running sync so it can't import anything more."""
+    result = await activity_service.cancel_target("link", link_id, delete_target=False)
+    return result.canceled
+
+
+async def _delete_source(source_id: str) -> Tuple[bool, int]:
+    """Stop the source's jobs and delete it. Returns (deleted, jobs stopped)."""
+    result = await activity_service.cancel_target("source", source_id, delete_target=True)
+    return result.deleted_target, result.canceled
+
+
+async def _delete_link_sources(link_id: str) -> Tuple[int, int]:
+    deleted = canceled = 0
+    for mapping in await SyncedFile.list_for_link(link_id):
+        if mapping.source:
+            was_deleted, stopped = await _delete_source(mapping.source)
+            deleted += was_deleted
+            canceled += stopped
+    return deleted, canceled
+
+
+async def delete_account(account_id: str, delete_sources: bool = False) -> CloudRemovalResponse:
     account = await IntegrationAccount.get(account_id)
+    links = await repo_query(
+        "SELECT VALUE id FROM sync_link WHERE account = $account",
+        {"account": ensure_record_id(account_id)},
+    )
+    deleted = canceled = 0
+    for link_id in links:
+        canceled += await _stop_link(str(link_id))
+        if delete_sources:
+            d, c = await _delete_link_sources(str(link_id))
+            deleted += d
+            canceled += c
     await account.delete()  # links and file mappings cascade (migration 26)
+    return CloudRemovalResponse(
+        message="Account disconnected",
+        sources_deleted=deleted,
+        jobs_canceled=canceled,
+    )
 
 
 async def _connect(account: IntegrationAccount) -> Tuple[StorageProvider, str]:
@@ -577,9 +619,21 @@ async def update_link(link_id: str, data: SyncLinkUpdate) -> SyncLinkResponse:
     return await get_link(link_id)
 
 
-async def delete_link(link_id: str) -> None:
+async def delete_link(link_id: str, delete_sources: bool = False) -> CloudRemovalResponse:
+    """Stop syncing a link. Its imported sources become regular sources, or
+    are deleted (with their in-flight processing) when asked."""
     link = await SyncLink.get(link_id)
-    await link.delete()  # mappings cascade; imported sources stay as regular sources
+    canceled = await _stop_link(link_id)
+    deleted = 0
+    if delete_sources:
+        deleted, stopped = await _delete_link_sources(link_id)
+        canceled += stopped
+    await link.delete()  # mappings cascade; remaining sources stay as regular sources
+    return CloudRemovalResponse(
+        message="Link removed" + ("" if delete_sources else "; imported sources were kept"),
+        sources_deleted=deleted,
+        jobs_canceled=canceled,
+    )
 
 
 async def trigger_sync(link_id: str) -> Optional[str]:
@@ -634,6 +688,45 @@ async def exclude_file(file_id: str, delete_source: bool) -> SyncedFileResponse:
     mapping.last_error = None
     await mapping.save()
     return _file_response(mapping)
+
+
+async def _disconnect_mapping(mapping: SyncedFile, delete_source: bool) -> Tuple[int, int]:
+    """Never sync this file again. Its source is deleted, or detached: it
+    becomes a regular source the sync no longer touches."""
+    deleted = canceled = 0
+    if mapping.source:
+        if delete_source:
+            was_deleted, canceled = await _delete_source(mapping.source)
+            deleted = int(was_deleted)
+        mapping.source = None
+    mapping.status = "excluded"
+    mapping.last_error = None
+    await mapping.save()
+    return deleted, canceled
+
+
+async def bulk_files(file_ids: List[str], action: SyncedFileBulkAction) -> SyncedFilesBulkResponse:
+    updated = deleted = canceled = 0
+    for file_id in file_ids:
+        try:
+            mapping = await SyncedFile.get(file_id)
+        except NotFoundError:
+            continue
+        if action in ("stop_sync", "resume_sync"):
+            if mapping.status == "excluded":
+                continue
+            mapping.sync_enabled = action == "resume_sync"
+            await mapping.save()
+        elif action == "include":
+            if mapping.status != "excluded":
+                continue
+            await include_file(file_id)
+        else:
+            d, c = await _disconnect_mapping(mapping, delete_source=action == "delete")
+            deleted += d
+            canceled += c
+        updated += 1
+    return SyncedFilesBulkResponse(updated=updated, sources_deleted=deleted, jobs_canceled=canceled)
 
 
 async def include_file(file_id: str) -> SyncedFileResponse:
@@ -728,6 +821,29 @@ async def set_source_sync(source_id: str, enabled: bool) -> SourceCloudInfoRespo
         mapping.sync_enabled = enabled
         await mapping.save()
     return await get_source_info(source_id)
+
+
+async def disconnect_source(source_id: str, delete_source: bool) -> CloudRemovalResponse:
+    """Stop syncing one source for good. A single-file link is removed; a file
+    of a folder link is excluded so it is never imported again. The source is
+    kept as a regular source, or deleted."""
+    mapping, link = await _source_context(source_id)
+    canceled = 0
+    deleted = 0
+    if link.kind == "file":
+        assert link.id
+        canceled += await _stop_link(str(link.id))
+        if delete_source:
+            was_deleted, stopped = await _delete_source(source_id)
+            deleted, canceled = int(was_deleted), canceled + stopped
+        await link.delete()
+    else:
+        deleted, canceled = await _disconnect_mapping(mapping, delete_source)
+    return CloudRemovalResponse(
+        message="Source deleted" if deleted else "Source disconnected from cloud sync",
+        sources_deleted=deleted,
+        jobs_canceled=canceled,
+    )
 
 
 async def trigger_source_sync(source_id: str) -> Optional[str]:

@@ -1,4 +1,9 @@
-import type { ActivityJob, ActivityStage, ActivityTargetType } from '@/lib/api/activity'
+import type {
+  ActivityJob,
+  ActivityProgress,
+  ActivityStage,
+  ActivityTargetType,
+} from '@/lib/api/activity'
 
 /** Queued jobs older than this with nothing running suggest the worker is down. */
 export const WORKER_STALL_THRESHOLD_MS = 60_000
@@ -15,6 +20,93 @@ export const STAGE_LABEL_KEYS: Record<ActivityStage, string> = {
   podcast: 'activity.stages.podcast',
   rebuild_embeddings: 'activity.stages.rebuild_embeddings',
   other: 'activity.stages.other',
+}
+
+/** Pipeline order, used to sort the "by phase" view. */
+export const STAGE_ORDER: ActivityStage[] = [
+  'cloud_sync',
+  'extraction',
+  'transformation',
+  'insight',
+  'embedding',
+  'insight_embedding',
+  'note_embedding',
+  'podcast',
+  'rebuild_embeddings',
+  'other',
+]
+
+/**
+ * i18n key for each step reported by the worker (open_notebook/utils/job_progress.py
+ * callers). Literal keys keep the unused-key check happy; unknown steps are
+ * shown as their raw code.
+ */
+export const STEP_LABEL_KEYS: Record<string, string> = {
+  started: 'activity.steps.started',
+  retrying: 'activity.steps.retrying',
+  stopping: 'activity.steps.stopping',
+  preparing: 'activity.steps.preparing',
+  extracting: 'activity.steps.extracting',
+  saving_content: 'activity.steps.saving_content',
+  queueing_embedding: 'activity.steps.queueing_embedding',
+  queueing_transformations: 'activity.steps.queueing_transformations',
+  calling_model: 'activity.steps.calling_model',
+  saving_insight: 'activity.steps.saving_insight',
+  chunking: 'activity.steps.chunking',
+  embedding: 'activity.steps.embedding',
+  saving_embeddings: 'activity.steps.saving_embeddings',
+  collecting: 'activity.steps.collecting',
+  queueing_jobs: 'activity.steps.queueing_jobs',
+  connecting: 'activity.steps.connecting',
+  listing_files: 'activity.steps.listing_files',
+  planning: 'activity.steps.planning',
+  importing: 'activity.steps.importing',
+  updating: 'activity.steps.updating',
+  renaming: 'activity.steps.renaming',
+  removing: 'activity.steps.removing',
+  skipping: 'activity.steps.skipping',
+  podcast_outline: 'activity.steps.podcast_outline',
+  podcast_transcript: 'activity.steps.podcast_transcript',
+  podcast_audio: 'activity.steps.podcast_audio',
+  podcast_combining: 'activity.steps.podcast_combining',
+  saving_episode: 'activity.steps.saving_episode',
+}
+
+export function stepLabel(step: string, t: (key: string) => string): string {
+  const key = STEP_LABEL_KEYS[step]
+  return key ? t(key) : step
+}
+
+/** 0–100 when the step reports a counter, else null. */
+export function progressPercent(progress: ActivityProgress | null | undefined): number | null {
+  if (!progress || progress.total === null || progress.current === null || progress.total <= 0) {
+    return null
+  }
+  return Math.min(100, Math.max(0, Math.round((progress.current / progress.total) * 100)))
+}
+
+export interface StageGroup {
+  stage: ActivityStage
+  jobs: ActivityJob[]
+}
+
+/** Group jobs by pipeline stage, in pipeline order, keeping job order inside a stage. */
+export function groupJobsByStage(jobs: ActivityJob[]): StageGroup[] {
+  const groups = new Map<ActivityStage, ActivityJob[]>()
+  for (const job of jobs) {
+    const list = groups.get(job.stage) ?? []
+    list.push(job)
+    groups.set(job.stage, list)
+  }
+  return STAGE_ORDER.filter(stage => groups.has(stage)).map(stage => ({
+    stage,
+    jobs: groups.get(stage) as ActivityJob[],
+  }))
+}
+
+/** Active jobs that can still be stopped (not already stopping). */
+export function stoppableIds(jobs: ActivityJob[]): string[] {
+  return jobs.filter(job => !job.cancel_requested).map(job => job.id)
 }
 
 export const SYSTEM_GROUP_KEY = 'system'

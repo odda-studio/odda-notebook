@@ -1,0 +1,10 @@
+-- Migration 32: live progress of background jobs for the activity view
+-- (fields on the surreal-commands `command` table, written by the worker via
+-- open_notebook/utils/job_progress.py).
+
+-- what the job is doing right now: {step, detail, current, total, at}
+DEFINE FIELD IF NOT EXISTS progress ON TABLE command FLEXIBLE TYPE option<object>;
+-- the job's timeline: one entry per step change, last 50 kept
+DEFINE FIELD IF NOT EXISTS progress_log ON TABLE command TYPE option<array<object>>;
+-- execution attempts (retries re-run the job)
+DEFINE FIELD IF NOT EXISTS attempts ON TABLE command TYPE option<int>;

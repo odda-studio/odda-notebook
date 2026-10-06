@@ -1,10 +1,13 @@
 import apiClient from './client'
+import type { LlmUsage } from '@/lib/types/llm-usage'
 
 export interface SourceInsightResponse {
   id: string
   source_id: string
   insight_type: string
   content: string
+  /** Model call that produced it (null for manual/older insights). */
+  usage?: LlmUsage | null
   // Insights created before backend migration 19 have no timestamps
   created: string | null
   updated: string | null

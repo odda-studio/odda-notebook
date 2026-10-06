@@ -76,9 +76,13 @@ The import starts immediately. Importing something that is already linked reuses
 
 | Level | Where | Effect |
 |---|---|---|
-| Linked item (file or folder) | Settings → Integrations → *Linked items* | Sync on/off, notebooks, subfolders, interval, transformations, *Sync now*, remove link (sources are kept) |
+| Linked item (file or folder) | Settings → Integrations → *Linked items* | Sync on/off, notebooks, subfolders, interval, transformations, *Sync now*, **Unlink** (a running sync is stopped; the imported sources are kept as regular sources, or deleted if you tick *Also delete the imported sources*) |
 | Single file of a folder | expand a linked folder | **Sync off** freezes that source (never updated nor deleted); **Exclude** stops importing it (optionally deleting its source); **Include** undoes it |
-| Source | source card badge and source detail → *Cloud sync* | same switch as above for that source: for a single-file link it toggles the link, for a file from a folder only that file; *Sync now*; open the original in Dropbox/Drive |
+| Several files of a folder | expand a linked folder, tick files (or *Select all*) | **Pause sync** / **Resume sync**; **Disconnect** (never synced again, the sources stay as regular sources); **Delete sources** (never synced again and the sources deleted, after a confirmation); **Include** |
+| Source | source card badge and source detail → *Cloud sync* | same switch as above for that source: for a single-file link it toggles the link, for a file from a folder only that file; *Sync now*; open the original in Dropbox/Drive; **Disconnect** stops syncing it for good — it becomes a regular source, or is deleted if you tick *Also delete this source* |
+| Account | Settings → Integrations → provider card → *Disconnect* | removes all its linked items; their sources are kept, or deleted with *Also delete the sources imported from this account* |
+
+Deleting sources from any of these places also stops their extraction, transformations and embeddings still in progress; you can follow everything on the **Activity** page.
 
 ## Settings
 

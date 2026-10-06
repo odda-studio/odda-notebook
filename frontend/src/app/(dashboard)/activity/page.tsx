@@ -2,25 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { formatDistanceToNow } from 'date-fns'
 import {
   Activity as ActivityIcon,
   AlertTriangle,
   CheckCircle2,
-  Clock,
   Cpu,
-  FileText,
-  FolderSync,
   History,
+  Layers,
+  ListTree,
   Loader2,
-  Mic,
-  RotateCcw,
   Square,
-  StickyNote,
-  Timer,
   Trash2,
   X,
-  type LucideIcon,
 } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/AppShell'
@@ -28,7 +21,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -40,31 +32,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  activeElapsedMs,
   ActivityGroup,
-  finishedDurationMs,
-  formatDuration,
+  groupJobsByStage,
   groupJobsByTarget,
   isWorkerStalled,
-  parseTime,
   sourceHref,
   STAGE_LABEL_KEYS,
+  STAGE_ORDER,
+  stoppableIds,
 } from '@/components/activity/activity-utils'
-import type { ActivityJob, ActivityTargetType } from '@/lib/api/activity'
+import {
+  ActiveJobRow,
+  RecentJobRow,
+  TARGET_ICONS,
+  type TFn,
+} from '@/components/activity/ActivityJobRows'
+import { JobDetailDialog } from '@/components/activity/JobDetailDialog'
+import type { ActivityJob, ActivityStage, ActivityTargetType } from '@/lib/api/activity'
 import {
   useActivity,
   useCancelJob,
+  useCancelJobs,
   useCancelTarget,
   useDismissFinished,
   useDismissJob,
 } from '@/lib/hooks/use-activity'
 import { useRetrySource } from '@/lib/hooks/use-sources'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { getDateLocale } from '@/lib/utils/date-locale'
 import { cn } from '@/lib/utils'
-
-type TFn = ReturnType<typeof useTranslation>['t']
 
 const WINDOW_OPTIONS = [
   { hours: 1, labelKey: 'activity.window1h' },
@@ -72,12 +69,7 @@ const WINDOW_OPTIONS = [
   { hours: 168, labelKey: 'activity.window7d' },
 ] as const
 
-const TARGET_ICONS: Record<ActivityTargetType, LucideIcon> = {
-  source: FileText,
-  note: StickyNote,
-  link: FolderSync,
-  podcast: Mic,
-}
+type ViewMode = 'target' | 'stage'
 
 /** Current time, re-rendered every second so elapsed timers tick live. */
 function useNow(intervalMs = 1000): number {
@@ -89,23 +81,39 @@ function useNow(intervalMs = 1000): number {
   return now
 }
 
-function jobDetail(job: ActivityJob, t: TFn): string | null {
-  if (!job.detail) return null
-  if (job.stage === 'extraction') {
-    const count = Number(job.detail)
-    if (!Number.isFinite(count) || count <= 0) return null
-    return t('activity.transformationsCount', { count })
-  }
-  return job.detail
+/** Group-level "select all" checkbox over the stoppable jobs of a group. */
+function GroupCheckbox({
+  jobs,
+  selected,
+  onChange,
+  t,
+}: {
+  jobs: ActivityJob[]
+  selected: Set<string>
+  onChange: (ids: string[], selected: boolean) => void
+  t: TFn
+}) {
+  const ids = stoppableIds(jobs)
+  const picked = ids.filter((id) => selected.has(id)).length
+  return (
+    <Checkbox
+      checked={ids.length > 0 && picked === ids.length ? true : picked > 0 ? 'indeterminate' : false}
+      disabled={ids.length === 0}
+      onCheckedChange={(checked) => onChange(ids, checked === true)}
+      aria-label={t('activity.selectGroup')}
+    />
+  )
 }
 
 function GroupHeader({
   group,
   t,
+  leading,
   actions,
 }: {
   group: ActivityGroup
   t: TFn
+  leading?: React.ReactNode
   actions?: React.ReactNode
 }) {
   const isSystem = group.targetType === null
@@ -114,7 +122,8 @@ function GroupHeader({
   const canLink = group.targetType === 'source' && group.exists && !!group.targetId
 
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {leading}
       <Icon className={cn('h-4 w-4 shrink-0', group.exists ? 'text-muted-foreground' : 'text-muted-foreground/50')} />
       {canLink ? (
         <Link
@@ -153,16 +162,15 @@ function ActiveGroupActions({
   onCancelAndDelete: () => void
   busy: boolean
 }) {
-  const cancellable = group.targetType === 'source' || group.targetType === 'link'
-  const allStopping = group.jobs.every((job) => job.cancel_requested)
-  if (!cancellable || !group.targetId || allStopping) return null
+  if (stoppableIds(group.jobs).length === 0) return null
+  const isSource = group.targetType === 'source' && !!group.targetId
   return (
     <span className="flex shrink-0 items-center gap-1">
       <Button size="sm" variant="outline" className="h-7 gap-1.5" disabled={busy} onClick={onCancelAll}>
         <Square className="h-3 w-3" />
         {t('activity.stopAll')}
       </Button>
-      {group.targetType === 'source' && group.exists && (
+      {isSource && group.exists && (
         <Button
           size="sm"
           variant="outline"
@@ -175,144 +183,6 @@ function ActiveGroupActions({
         </Button>
       )}
     </span>
-  )
-}
-
-function ActiveJobRow({
-  job,
-  now,
-  t,
-  onCancel,
-  canceling,
-}: {
-  job: ActivityJob
-  now: number
-  t: TFn
-  onCancel: (jobId: string) => void
-  canceling: boolean
-}) {
-  const elapsed = activeElapsedMs(job, now)
-  const detail = jobDetail(job, t)
-  const running = job.status === 'running'
-  const stopping = job.cancel_requested
-
-  return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-testid="activity-active-job">
-      {running ? (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-      ) : (
-        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      )}
-      <span className="font-medium">{t(STAGE_LABEL_KEYS[job.stage])}</span>
-      {detail && <span className="truncate text-muted-foreground">{detail}</span>}
-      {stopping ? (
-        <Badge variant="outline" className="text-destructive">{t('activity.statusStopping')}</Badge>
-      ) : (
-        <Badge variant={running ? 'default' : 'secondary'}>
-          {running ? t('activity.statusRunning') : t('activity.waitingForWorker')}
-        </Badge>
-      )}
-      <span className="ml-auto flex items-center gap-2">
-        {elapsed !== null && (
-          <span className="flex items-center gap-1 tabular-nums text-xs text-muted-foreground">
-            <Timer className="h-3 w-3" />
-            {formatDuration(elapsed)}
-          </span>
-        )}
-        {!stopping && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-muted-foreground hover:text-destructive"
-            disabled={canceling}
-            onClick={() => onCancel(job.id)}
-            aria-label={t('activity.stop')}
-            title={t('activity.stop')}
-          >
-            <Square className="h-3 w-3" />
-            {t('activity.stop')}
-          </Button>
-        )}
-      </span>
-    </li>
-  )
-}
-
-function RecentJobRow({
-  job,
-  t,
-  language,
-  onRetry,
-  retrying,
-  onDismiss,
-}: {
-  job: ActivityJob
-  t: TFn
-  language: string
-  onRetry: (sourceId: string) => void
-  retrying: boolean
-  onDismiss: (jobId: string) => void
-}) {
-  const duration = finishedDurationMs(job)
-  const finishedAt = parseTime(job.finished_at)
-  const detail = jobDetail(job, t)
-
-  const statusBadge =
-    job.status === 'failed' ? (
-      <Badge variant="destructive">{t('activity.statusFailed')}</Badge>
-    ) : job.status === 'canceled' ? (
-      <Badge variant="secondary">{t('activity.statusCanceled')}</Badge>
-    ) : (
-      <Badge variant="default">{t('activity.statusCompleted')}</Badge>
-    )
-
-  return (
-    <li className="space-y-1 text-sm" data-testid="activity-recent-job">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="font-medium">{t(STAGE_LABEL_KEYS[job.stage])}</span>
-        {detail && <span className="truncate text-muted-foreground">{detail}</span>}
-        {statusBadge}
-        <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
-          {duration !== null && (
-            <span className="flex items-center gap-1 tabular-nums">
-              <Timer className="h-3 w-3" />
-              {formatDuration(duration)}
-            </span>
-          )}
-          {finishedAt !== null && (
-            <span>
-              {formatDistanceToNow(finishedAt, { addSuffix: true, locale: getDateLocale(language) })}
-            </span>
-          )}
-          <button
-            type="button"
-            className="rounded-sm p-0.5 hover:bg-muted hover:text-foreground"
-            onClick={() => onDismiss(job.id)}
-            aria-label={t('activity.dismiss')}
-            title={t('activity.dismiss')}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </span>
-      </div>
-      {job.status === 'failed' && job.error && (
-        <p className="line-clamp-3 whitespace-pre-wrap break-words rounded-sm bg-destructive-tint px-2 py-1 text-xs text-destructive">
-          {job.error}
-        </p>
-      )}
-      {job.retryable && job.target_id && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5"
-          disabled={retrying}
-          onClick={() => onRetry(job.target_id as string)}
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          {t('activity.retry')}
-        </Button>
-      )}
-    </li>
   )
 }
 
@@ -333,48 +203,247 @@ function CountTile({ label, value, tone }: { label: string; value: number; tone?
   )
 }
 
+/** One chip per stage with jobs in progress; clicking filters the lists to it. */
+function StageChips({
+  jobs,
+  stage,
+  onChange,
+  t,
+}: {
+  jobs: ActivityJob[]
+  stage: ActivityStage | null
+  onChange: (stage: ActivityStage | null) => void
+  t: TFn
+}) {
+  const counts = new Map<ActivityStage, { running: number; queued: number }>()
+  for (const job of jobs) {
+    const entry = counts.get(job.stage) ?? { running: 0, queued: 0 }
+    if (job.status === 'running') entry.running += 1
+    else entry.queued += 1
+    counts.set(job.stage, entry)
+  }
+  const stages = STAGE_ORDER.filter((s) => counts.has(s) || s === stage)
+  if (stages.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="activity-stage-chips">
+      {stages.map((s) => {
+        const entry = counts.get(s) ?? { running: 0, queued: 0 }
+        const active = stage === s
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onChange(active ? null : s)}
+            aria-pressed={active}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
+              active ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted',
+            )}
+          >
+            <span className="font-medium">{t(STAGE_LABEL_KEYS[s])}</span>
+            <span className="tabular-nums">
+              {t('activity.stageCounts', { running: entry.running, queued: entry.queued })}
+            </span>
+            {active && <X className="h-3 w-3" />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function ActivityPage() {
   const { t, language } = useTranslation()
   const [hours, setHours] = useState(24)
   const [onlyFailures, setOnlyFailures] = useState(false)
   const [search, setSearch] = useState('')
+  const [view, setView] = useState<ViewMode>('target')
+  const [stageFilter, setStageFilter] = useState<ActivityStage | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [detailJobId, setDetailJobId] = useState<string | null>(null)
+  const [deleteGroup, setDeleteGroup] = useState<ActivityGroup | null>(null)
+  const [confirmStopAll, setConfirmStopAll] = useState(false)
   const now = useNow()
 
   const { data, isLoading, isError, refetch } = useActivity({ hours })
   const retrySource = useRetrySource()
   const cancelJob = useCancelJob()
+  const cancelJobs = useCancelJobs()
   const cancelTarget = useCancelTarget()
   const dismissJob = useDismissJob()
   const dismissFinished = useDismissFinished()
-  const [deleteGroup, setDeleteGroup] = useState<ActivityGroup | null>(null)
 
   const needle = search.trim().toLowerCase()
-  const matchesSearch = (group: ActivityGroup) =>
-    !needle || (group.title ?? '').toLowerCase().includes(needle)
+  const matches = (job: ActivityJob) =>
+    (!needle ||
+      (job.target_title ?? '').toLowerCase().includes(needle) ||
+      (job.detail ?? '').toLowerCase().includes(needle) ||
+      (job.progress?.detail ?? '').toLowerCase().includes(needle)) &&
+    (!stageFilter || job.stage === stageFilter)
 
-  const activeGroups = useMemo(() => groupJobsByTarget(data?.active ?? []), [data?.active])
-  const recentGroups = useMemo(() => {
-    const jobs = (data?.recent ?? []).filter((job) => !onlyFailures || job.status === 'failed')
-    return groupJobsByTarget(jobs)
-  }, [data?.recent, onlyFailures])
+  const activeJobs = useMemo(() => data?.active ?? [], [data?.active])
+  const visibleActiveJobs = activeJobs.filter(matches)
+  const visibleRecentJobs = (data?.recent ?? [])
+    .filter((job) => !onlyFailures || job.status === 'failed')
+    .filter(matches)
+  const filtering = !!needle || onlyFailures || !!stageFilter
 
-  const visibleActive = activeGroups.filter(matchesSearch)
-  const visibleRecent = recentGroups.filter(matchesSearch)
-  const filtering = !!needle || onlyFailures
+  // Keep only selections of jobs that are still in progress and stoppable
+  const stoppable = useMemo(() => new Set(stoppableIds(activeJobs)), [activeJobs])
+  const selectedIds = [...selected].filter((id) => stoppable.has(id))
 
   const counts = data?.counts ?? { active: 0, queued: 0, running: 0, failed_recent: 0 }
   const stalled = !!data && isWorkerStalled(data.active, counts.running, now)
+
+  const setSelection = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
 
   const handleRetry = (sourceId: string) => {
     retrySource.mutate(sourceId, { onSuccess: () => void refetch() })
   }
 
   const cancelGroup = (group: ActivityGroup, deleteTarget: boolean) => {
-    if (!group.targetId || (group.targetType !== 'source' && group.targetType !== 'link')) return
-    cancelTarget.mutate(
-      { target_type: group.targetType, target_id: group.targetId, delete_target: deleteTarget },
-      { onSettled: () => setDeleteGroup(null) }
+    if (group.targetId && (group.targetType === 'source' || group.targetType === 'link')) {
+      cancelTarget.mutate(
+        { target_type: group.targetType, target_id: group.targetId, delete_target: deleteTarget },
+        { onSettled: () => setDeleteGroup(null) }
+      )
+    } else {
+      cancelJobs.mutate({ job_ids: stoppableIds(group.jobs) })
+    }
+  }
+
+  const stopSelected = () =>
+    cancelJobs.mutate({ job_ids: selectedIds }, { onSuccess: () => setSelected(new Set()) })
+
+  const stopEverything = () =>
+    cancelJobs.mutate(
+      { all: true },
+      {
+        onSettled: () => {
+          setConfirmStopAll(false)
+          setSelected(new Set())
+        },
+      }
     )
+
+  const renderActiveRows = (jobs: ActivityJob[], showTarget: boolean) => (
+    <ol className="space-y-3 border-l pl-3">
+      {jobs.map((job) => (
+        <ActiveJobRow
+          key={job.id}
+          job={job}
+          now={now}
+          t={t}
+          showTarget={showTarget}
+          selected={selected.has(job.id)}
+          onSelect={(id, on) => setSelection([id], on)}
+          onCancel={(jobId) => cancelJob.mutate(jobId)}
+          onDetails={setDetailJobId}
+          canceling={cancelJob.isPending}
+        />
+      ))}
+    </ol>
+  )
+
+  const renderRecentRows = (jobs: ActivityJob[], showTarget: boolean) => (
+    <ol className="space-y-3 border-l pl-3">
+      {jobs.map((job) => (
+        <RecentJobRow
+          key={job.id}
+          job={job}
+          t={t}
+          language={language}
+          showTarget={showTarget}
+          onRetry={handleRetry}
+          retrying={retrySource.isPending}
+          onDismiss={(jobId) => dismissJob.mutate(jobId)}
+          onDetails={setDetailJobId}
+        />
+      ))}
+    </ol>
+  )
+
+  const renderActive = () => {
+    if (view === 'stage') {
+      return groupJobsByStage(visibleActiveJobs).map(({ stage, jobs }) => {
+        const running = jobs.filter((job) => job.status === 'running').length
+        return (
+          <Card key={stage} className="gap-3 px-4 py-3" data-testid="activity-group">
+            <div className="flex flex-wrap items-center gap-2">
+              <GroupCheckbox jobs={jobs} selected={selected} onChange={setSelection} t={t} />
+              <Layers className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{t(STAGE_LABEL_KEYS[stage])}</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {t('activity.stageCounts', { running, queued: jobs.length - running })}
+              </span>
+              {stoppableIds(jobs).length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5"
+                  disabled={cancelJobs.isPending}
+                  onClick={() => cancelJobs.mutate({ job_ids: stoppableIds(jobs) })}
+                >
+                  <Square className="h-3 w-3" />
+                  {t('activity.stopPhase')}
+                </Button>
+              )}
+            </div>
+            {renderActiveRows(jobs, true)}
+          </Card>
+        )
+      })
+    }
+    return groupJobsByTarget(visibleActiveJobs).map((group) => (
+      <Card key={group.key} className="gap-3 px-4 py-3" data-testid="activity-group">
+        <GroupHeader
+          group={group}
+          t={t}
+          leading={<GroupCheckbox jobs={group.jobs} selected={selected} onChange={setSelection} t={t} />}
+          actions={
+            <ActiveGroupActions
+              group={group}
+              t={t}
+              busy={cancelTarget.isPending || cancelJobs.isPending}
+              onCancelAll={() => cancelGroup(group, false)}
+              onCancelAndDelete={() => setDeleteGroup(group)}
+            />
+          }
+        />
+        {renderActiveRows(group.jobs, false)}
+      </Card>
+    ))
+  }
+
+  const renderRecent = () => {
+    if (view === 'stage') {
+      return groupJobsByStage(visibleRecentJobs).map(({ stage, jobs }) => (
+        <Card key={stage} className="gap-3 px-4 py-3" data-testid="activity-group">
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">{t(STAGE_LABEL_KEYS[stage])}</span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {t('activity.jobsCount', { count: jobs.length })}
+            </span>
+          </div>
+          {renderRecentRows(jobs, true)}
+        </Card>
+      ))
+    }
+    return groupJobsByTarget(visibleRecentJobs).map((group) => (
+      <Card key={group.key} className="gap-3 px-4 py-3" data-testid="activity-group">
+        <GroupHeader group={group} t={t} />
+        {renderRecentRows(group.jobs, false)}
+      </Card>
+    ))
   }
 
   const renderBody = () => {
@@ -407,12 +476,51 @@ export default function ActivityPage() {
         )}
 
         <section className="space-y-3">
-          <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
-            <Loader2 className={cn('h-4 w-4', counts.active > 0 && 'animate-spin')} />
-            {t('activity.inProgress')}
-          </h2>
-          {visibleActive.length === 0 ? (
-            filtering && activeGroups.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
+              <Loader2 className={cn('h-4 w-4', counts.active > 0 && 'animate-spin')} />
+              {t('activity.inProgress')}
+            </h2>
+            {stoppable.size > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-destructive hover:text-destructive"
+                disabled={cancelJobs.isPending}
+                onClick={() => setConfirmStopAll(true)}
+              >
+                <Square className="h-3.5 w-3.5" />
+                {t('activity.stopEverything', { count: stoppable.size })}
+              </Button>
+            )}
+          </div>
+
+          {selectedIds.length > 0 && (
+            <div
+              className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-sm"
+              data-testid="activity-selection-bar"
+            >
+              <span className="text-sm font-medium">
+                {t('activity.selectedCount', { count: selectedIds.length })}
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="ml-auto h-7 gap-1.5"
+                disabled={cancelJobs.isPending}
+                onClick={stopSelected}
+              >
+                <Square className="h-3 w-3" />
+                {t('activity.stopSelected')}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7" onClick={() => setSelected(new Set())}>
+                {t('activity.clearSelection')}
+              </Button>
+            </div>
+          )}
+
+          {visibleActiveJobs.length === 0 ? (
+            filtering && activeJobs.length > 0 ? (
               <p className="text-sm text-muted-foreground">{t('activity.noMatches')}</p>
             ) : (
               <EmptyState
@@ -422,37 +530,7 @@ export default function ActivityPage() {
               />
             )
           ) : (
-            <div className="grid gap-3">
-              {visibleActive.map((group) => (
-                <Card key={group.key} className="gap-3 px-4 py-3" data-testid="activity-group">
-                  <GroupHeader
-                    group={group}
-                    t={t}
-                    actions={
-                      <ActiveGroupActions
-                        group={group}
-                        t={t}
-                        busy={cancelTarget.isPending}
-                        onCancelAll={() => cancelGroup(group, false)}
-                        onCancelAndDelete={() => setDeleteGroup(group)}
-                      />
-                    }
-                  />
-                  <ol className="space-y-2 border-l pl-3">
-                    {group.jobs.map((job) => (
-                      <ActiveJobRow
-                        key={job.id}
-                        job={job}
-                        now={now}
-                        t={t}
-                        onCancel={(jobId) => cancelJob.mutate(jobId)}
-                        canceling={cancelJob.isPending}
-                      />
-                    ))}
-                  </ol>
-                </Card>
-              ))}
-            </div>
+            <div className="grid gap-3">{renderActive()}</div>
           )}
         </section>
 
@@ -471,7 +549,7 @@ export default function ActivityPage() {
                 />
                 {t('activity.onlyFailures')}
               </label>
-              {recentGroups.length > 0 && (
+              {(data.recent ?? []).length > 0 && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -485,7 +563,7 @@ export default function ActivityPage() {
               )}
             </div>
           </div>
-          {visibleRecent.length === 0 ? (
+          {visibleRecentJobs.length === 0 ? (
             filtering ? (
               <p className="text-sm text-muted-foreground">{t('activity.noMatches')}</p>
             ) : (
@@ -496,26 +574,7 @@ export default function ActivityPage() {
               />
             )
           ) : (
-            <div className="grid gap-3">
-              {visibleRecent.map((group) => (
-                <Card key={group.key} className="gap-3 px-4 py-3" data-testid="activity-group">
-                  <GroupHeader group={group} t={t} />
-                  <ol className="space-y-3 border-l pl-3">
-                    {group.jobs.map((job) => (
-                      <RecentJobRow
-                        key={job.id}
-                        job={job}
-                        t={t}
-                        language={language}
-                        onRetry={handleRetry}
-                        retrying={retrySource.isPending}
-                        onDismiss={(jobId) => dismissJob.mutate(jobId)}
-                      />
-                    ))}
-                  </ol>
-                </Card>
-              ))}
-            </div>
+            <div className="grid gap-3">{renderRecent()}</div>
           )}
         </section>
       </div>
@@ -548,22 +607,53 @@ export default function ActivityPage() {
             </Select>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center gap-3">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <CountTile label={t('activity.running')} value={counts.running} tone="active" />
             <CountTile label={t('activity.queued')} value={counts.queued} />
             <CountTile label={t('activity.failed')} value={counts.failed_recent} tone="danger" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('activity.searchPlaceholder')}
-              aria-label={t('activity.searchPlaceholder')}
-              className="ml-auto w-full sm:w-64"
-            />
+            <div className="ml-auto flex w-full flex-wrap items-center gap-3 sm:w-auto">
+              <Tabs value={view} onValueChange={(value) => setView(value as ViewMode)}>
+                <TabsList>
+                  <TabsTrigger value="target" className="gap-1.5">
+                    <ListTree className="h-3.5 w-3.5" />
+                    {t('activity.viewByItem')}
+                  </TabsTrigger>
+                  <TabsTrigger value="stage" className="gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    {t('activity.viewByPhase')}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('activity.searchPlaceholder')}
+                aria-label={t('activity.searchPlaceholder')}
+                className="w-full sm:w-56"
+              />
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <StageChips jobs={activeJobs} stage={stageFilter} onChange={setStageFilter} t={t} />
           </div>
 
           {renderBody()}
         </div>
       </div>
+
+      <JobDetailDialog jobId={detailJobId} onOpenChange={(open) => !open && setDetailJobId(null)} />
+
+      <ConfirmDialog
+        open={confirmStopAll}
+        onOpenChange={setConfirmStopAll}
+        title={t('activity.stopEverythingTitle')}
+        description={t('activity.stopEverythingConfirm', { count: stoppable.size })}
+        confirmText={t('activity.stopEverything', { count: stoppable.size })}
+        confirmVariant="destructive"
+        isLoading={cancelJobs.isPending}
+        onConfirm={stopEverything}
+      />
 
       <ConfirmDialog
         open={deleteGroup !== null}

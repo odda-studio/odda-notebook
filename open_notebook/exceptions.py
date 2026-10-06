@@ -75,3 +75,17 @@ class NoTranscriptFound(OpenNotebookError):
     """Raised when no transcript is found for a video."""
 
     pass
+
+
+# Failures that retrying a background job can't fix: commands pass this as
+# their retry `stop_on` so they fail at once instead of re-running (and, for
+# AI jobs, paying for) the same call several times.
+PERMANENT_JOB_ERRORS: list[type[Exception]] = [
+    ValueError,
+    InvalidInputError,
+    NotFoundError,
+    AuthenticationError,
+    ConfigurationError,
+    ContextLengthExceededError,
+    UnsupportedTypeException,
+]

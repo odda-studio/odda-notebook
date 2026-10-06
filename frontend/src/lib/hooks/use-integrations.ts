@@ -7,6 +7,7 @@ import {
   IntegrationProviderName,
   SourceCloudInfo,
   SourceCloudMap,
+  SyncedFileBulkAction,
   SyncLink,
   UpdateIntegrationSettingsRequest,
   UpdateLinkRequest,
@@ -309,13 +310,17 @@ export function useDisconnectAccount() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: (accountId: string) => integrationsApi.deleteAccount(accountId),
-    onSuccess: () => {
+    mutationFn: ({ accountId, deleteSources = false }: { accountId: string; deleteSources?: boolean }) =>
+      integrationsApi.deleteAccount(accountId, deleteSources),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: INTEGRATION_QUERY_KEYS.accounts })
       invalidateCloudState(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
       toast({
         title: t('common.success'),
-        description: t('integrations.accountDisconnected'),
+        description: result.sources_deleted
+          ? t('integrations.removedWithSources', { count: result.sources_deleted })
+          : t('integrations.accountDisconnected'),
       })
     },
     onError: (error: unknown) => {
@@ -427,13 +432,17 @@ export function useDeleteLink() {
   const { t } = useTranslation()
 
   return useMutation({
-    mutationFn: (id: string) => integrationsApi.deleteLink(id),
-    onSuccess: () => {
+    mutationFn: ({ id, deleteSources = false }: { id: string; deleteSources?: boolean }) =>
+      integrationsApi.deleteLink(id, deleteSources),
+    onSuccess: (result) => {
       invalidateCloudState(queryClient)
       queryClient.invalidateQueries({ queryKey: INTEGRATION_QUERY_KEYS.accounts })
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
       toast({
         title: t('common.success'),
-        description: t('integrations.linkDeleted'),
+        description: result.sources_deleted
+          ? t('integrations.removedWithSources', { count: result.sources_deleted })
+          : t('integrations.linkDeleted'),
       })
     },
     onError: (error: unknown) => {
@@ -601,5 +610,63 @@ export function useTriggerSourceSync() {
       })
     },
     onError: handleError,
+  })
+}
+
+/** One action on several files of a link (stop/resume sync, disconnect, delete, include). */
+export function useBulkSyncedFiles() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({ fileIds, action }: { fileIds: string[]; action: SyncedFileBulkAction }) =>
+      integrationsApi.bulkSyncedFiles(fileIds, action),
+    onSuccess: (result) => {
+      invalidateCloudState(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
+      toast({
+        title: t('common.success'),
+        description: result.sources_deleted
+          ? t('integrations.removedWithSources', { count: result.sources_deleted })
+          : t('integrations.filesUpdated', { count: result.updated }),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t, 'integrations.fileUpdateFailed'),
+        variant: 'destructive',
+      })
+    },
+  })
+}
+
+/** Stop syncing one source for good; keep it as a regular source or delete it. */
+export function useDisconnectSource() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { t } = useTranslation()
+
+  return useMutation({
+    mutationFn: ({ sourceId, deleteSource }: { sourceId: string; deleteSource: boolean }) =>
+      integrationsApi.disconnectSource(sourceId, deleteSource),
+    onSuccess: (result) => {
+      invalidateCloudState(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
+      toast({
+        title: t('common.success'),
+        description: result.sources_deleted
+          ? t('integrations.sourceDeletedFromCloud')
+          : t('integrations.sourceDisconnected'),
+      })
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: t('common.error'),
+        description: getApiErrorMessage(error, t, 'integrations.disconnectSourceFailed'),
+        variant: 'destructive',
+      })
+    },
   })
 }

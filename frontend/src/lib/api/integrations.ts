@@ -208,6 +208,27 @@ export interface SourceCloudInfo {
 /** Keyed by source_id; every cloud-imported source. */
 export type SourceCloudMap = Record<string, SourceCloudInfo>
 
+/** Outcome of removing a link/account/source from cloud sync. */
+export interface CloudRemovalResponse {
+  message: string
+  sources_deleted: number
+  /** Background jobs stopped (syncs, processing of deleted sources). */
+  jobs_canceled: number
+}
+
+/**
+ * stop_sync/resume_sync: toggle sync; disconnect: never sync again, keep the
+ * sources as regular ones; delete: never sync again and delete the sources;
+ * include: undo a disconnect/exclusion.
+ */
+export type SyncedFileBulkAction = 'stop_sync' | 'resume_sync' | 'disconnect' | 'delete' | 'include'
+
+export interface SyncedFilesBulkResponse {
+  updated: number
+  sources_deleted: number
+  jobs_canceled: number
+}
+
 export interface IntegrationMessageResponse {
   message: string
 }
@@ -265,9 +286,11 @@ export const integrationsApi = {
     return response.data
   },
 
-  deleteAccount: async (accountId: string): Promise<IntegrationMessageResponse> => {
-    const response = await apiClient.delete<IntegrationMessageResponse>(
-      `/integrations/accounts/${accountId}`
+  /** Its links are removed; their sources are kept, or deleted with deleteSources. */
+  deleteAccount: async (accountId: string, deleteSources = false): Promise<CloudRemovalResponse> => {
+    const response = await apiClient.delete<CloudRemovalResponse>(
+      `/integrations/accounts/${accountId}`,
+      { params: { delete_sources: deleteSources } }
     )
     return response.data
   },
@@ -308,9 +331,11 @@ export const integrationsApi = {
     return response.data
   },
 
-  /** Removes the link only: its sources stay as regular sources. */
-  deleteLink: async (id: string): Promise<IntegrationMessageResponse> => {
-    const response = await apiClient.delete<IntegrationMessageResponse>(`/integrations/links/${id}`)
+  /** Stops and removes the link; its sources stay as regular sources unless deleteSources. */
+  deleteLink: async (id: string, deleteSources = false): Promise<CloudRemovalResponse> => {
+    const response = await apiClient.delete<CloudRemovalResponse>(`/integrations/links/${id}`, {
+      params: { delete_sources: deleteSources },
+    })
     return response.data
   },
 
@@ -338,6 +363,17 @@ export const integrationsApi = {
     return response.data
   },
 
+  bulkSyncedFiles: async (
+    fileIds: string[],
+    action: SyncedFileBulkAction
+  ): Promise<SyncedFilesBulkResponse> => {
+    const response = await apiClient.post<SyncedFilesBulkResponse>('/integrations/synced-files/bulk', {
+      file_ids: fileIds,
+      action,
+    })
+    return response.data
+  },
+
   includeSyncedFile: async (id: string): Promise<SyncedFile> => {
     const response = await apiClient.post<SyncedFile>(`/integrations/synced-files/${id}/include`)
     return response.data
@@ -360,6 +396,15 @@ export const integrationsApi = {
     const response = await apiClient.put<SourceCloudInfo>(`/integrations/sources/${sourceId}/sync`, {
       sync_enabled: syncEnabled,
     })
+    return response.data
+  },
+
+  /** Stop syncing the source for good; it stays as a regular source unless deleteSource. */
+  disconnectSource: async (sourceId: string, deleteSource: boolean): Promise<CloudRemovalResponse> => {
+    const response = await apiClient.post<CloudRemovalResponse>(
+      `/integrations/sources/${sourceId}/disconnect`,
+      { delete_source: deleteSource }
+    )
     return response.data
   },
 

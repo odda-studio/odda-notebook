@@ -1,0 +1,4 @@
+-- Migration 33: per-transformation output token budget
+-- NONE = automatic (8192, or 32768 for reasoning models; graphs/transformation.py)
+
+DEFINE FIELD IF NOT EXISTS max_tokens ON TABLE transformation TYPE option<int>;

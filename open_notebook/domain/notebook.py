@@ -361,6 +361,8 @@ class SourceInsight(ObjectModel):
     table_name: ClassVar[str] = "source_insight"
     insight_type: str
     content: str
+    # token usage of the model call that produced it (None for manual insights)
+    usage: Optional[Dict[str, Any]] = None
 
     @classmethod
     async def get_for_sources(
@@ -594,7 +596,11 @@ class Source(ObjectModel):
             raise DatabaseOperationError(e)
 
     async def add_insight(
-        self, insight_type: str, content: str, transformation_id: Optional[str] = None
+        self,
+        insight_type: str,
+        content: str,
+        transformation_id: Optional[str] = None,
+        usage: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Submit insight creation as an async command (fire-and-forget).
@@ -638,6 +644,7 @@ class Source(ObjectModel):
                     "insight_type": insight_type,
                     "content": content,
                     "transformation_id": transformation_id,
+                    "usage": usage,
                 },
             )
             logger.info(

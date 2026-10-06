@@ -5,6 +5,8 @@ Maps raw exceptions from AI providers/Esperanto/LangChain to user-friendly
 error messages and appropriate exception types.
 """
 
+import re
+
 from loguru import logger
 
 from open_notebook.exceptions import (
@@ -84,6 +86,13 @@ def classify_error(exception: BaseException) -> tuple[type[OpenNotebookError], s
     error_type_name = type(exception).__name__.lower()
     combined = f"{error_type_name}: {error_str}"
 
+    # An output limit above the model's maximum is a settings problem, not an
+    # oversized input: checked first because the provider message mentions
+    # "max_tokens", which the context-length rule would otherwise match.
+    output_limit = _output_limit_message(error_str)
+    if output_limit:
+        return ConfigurationError, output_limit
+
     for keywords, exc_class, message in _CLASSIFICATION_RULES:
         for keyword in keywords:
             if keyword in combined:
@@ -102,3 +111,30 @@ def _truncate(text: str, max_length: int = 200) -> str:
     if len(text) <= max_length:
         return text
     return text[:max_length] + "..."
+
+
+# OpenAI: "max_tokens is too large: 100000. This model supports at most 16384 completion tokens"
+# Anthropic: "max_tokens: 100000 > 64000, which is the maximum allowed number of output tokens"
+_OUTPUT_LIMIT_PATTERNS = [
+    re.compile(r"max_(?:completion_)?tokens is too large: (\d+).*?supports at most (\d+)"),
+    re.compile(r"max_tokens: (\d+) > (\d+), which is the maximum allowed"),
+]
+
+
+def _output_limit_message(error_str: str) -> str | None:
+    for pattern in _OUTPUT_LIMIT_PATTERNS:
+        match = pattern.search(error_str)
+        if match:
+            requested, maximum = match.groups()
+            return (
+                f"The output token limit ({requested}) is above what this model allows "
+                f"({maximum}). Lower *Max output tokens* in the transformation settings, "
+                "or leave it empty for automatic."
+            )
+    if "max_tokens is too large" in error_str or "max_completion_tokens is too large" in error_str:
+        return (
+            "The output token limit is above what this model allows. Lower *Max output "
+            "tokens* in the transformation settings, or leave it empty for automatic."
+        )
+    return None
+

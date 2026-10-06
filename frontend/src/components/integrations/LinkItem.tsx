@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeleteLink, useTriggerLinkSync, useUpdateLink } from '@/lib/hooks/use-integrations'
 import type { SyncLink } from '@/lib/api/integrations'
@@ -19,6 +18,7 @@ import {
   SyncStatusBadge,
 } from './integration-utils'
 import { LinkEditDialog } from './LinkEditDialog'
+import { RemoveCloudDialog } from './RemoveCloudDialog'
 import { SyncedFileList } from './SyncedFileList'
 
 interface LinkItemProps {
@@ -168,14 +168,23 @@ export function LinkItem({ link }: LinkItemProps) {
 
       {editOpen && <LinkEditDialog open={editOpen} onOpenChange={setEditOpen} link={link} />}
 
-      <ConfirmDialog
+      <RemoveCloudDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title={t('integrations.deleteLinkTitle')}
         description={t('integrations.deleteLinkConfirm', { name: link.name })}
         confirmText={t('integrations.deleteLink')}
-        confirmVariant="destructive"
-        onConfirm={() => deleteLink.mutate(link.id, { onSettled: () => setDeleteOpen(false) })}
+        deleteLabel={
+          link.file_count > 0
+            ? t('integrations.alsoDeleteLinkSources', { count: link.file_count })
+            : undefined
+        }
+        onConfirm={deleteSources =>
+          deleteLink.mutate(
+            { id: link.id, deleteSources },
+            { onSettled: () => setDeleteOpen(false) }
+          )
+        }
         isLoading={deleteLink.isPending}
       />
     </li>

@@ -5,7 +5,9 @@ from fastapi import APIRouter, Query
 from api import activity_service
 from api.models import (
     ActivityCounts,
+    ActivityJobDetail,
     ActivityResponse,
+    CancelJobsRequest,
     CancelJobsResponse,
     CancelTargetRequest,
     DismissResponse,
@@ -28,6 +30,18 @@ async def get_activity_summary(
 ):
     """Counts only - cheap enough to poll for a badge."""
     return await activity_service.get_counts(hours=hours)
+
+
+@router.get("/activity/jobs/{job_id}", response_model=ActivityJobDetail)
+async def get_job(job_id: str):
+    """Everything about one job: input, output, live step and step timeline."""
+    return await activity_service.get_job(job_id)
+
+
+@router.post("/activity/cancel", response_model=CancelJobsResponse)
+async def cancel_jobs(data: CancelJobsRequest):
+    """Stop several jobs at once: a selection, a whole stage, or everything."""
+    return await activity_service.cancel_jobs(data)
 
 
 @router.post("/activity/jobs/{job_id}/cancel", response_model=CancelJobsResponse)

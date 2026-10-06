@@ -1,0 +1,9 @@
+-- Migration 34: token usage of LLM calls
+-- {model, input_tokens, output_tokens, reasoning_tokens, cached_input_tokens,
+--  total_tokens, max_output_tokens, prompt_tokens_estimate, finish_reason,
+--  duration_seconds} - see open_notebook/utils/llm_usage.py
+
+-- every LLM call made by a background job (last 50)
+DEFINE FIELD IF NOT EXISTS llm_usage ON TABLE command TYPE option<array<object>>;
+-- the call that produced an insight
+DEFINE FIELD IF NOT EXISTS usage ON TABLE source_insight FLEXIBLE TYPE option<object>;

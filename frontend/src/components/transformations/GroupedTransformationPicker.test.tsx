@@ -13,6 +13,7 @@ const makeTransformation = (id: string, name: string, groupId: string | null = n
   prompt: 'Prompt',
   apply_default: false,
   model_id: null,
+  max_tokens: null,
   group_id: groupId,
   created: '2026-01-01T00:00:00Z',
   updated: '2026-01-01T00:00:00Z',

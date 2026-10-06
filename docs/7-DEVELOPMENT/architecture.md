@@ -279,20 +279,17 @@ LangGraph is a state machine library that orchestrates multi-step AI workflows. 
 ```
 Input (file/URL/text)
   ↓
-Extract Content (content-core library)
+Extract Content (content-core library)      [content_process]
   ↓
-Clean & tokenize text
+Save full text to the Source record         [save_source]
+  ↓ queues `embed_source` (chunk + embed, its own job)
+Queue one `run_transformation` job per       [queue_transformations]
+transformation (ADR-011)
   ↓
-Generate Embeddings (Esperanto)
-  ↓
-Create SourceEmbedding records (chunked + indexed)
-  ↓
-Extract Topics (LLM summarization)
-  ↓
-Save to SurrealDB
-  ↓
-Output (Source record with embeddings)
+Output (Source record; embeddings and insights follow as separate jobs)
 ```
+
+Each step reports its progress to the Activity page via `report_progress()` (ADR-011).
 
 **State Dict**:
 ```python
@@ -417,7 +414,7 @@ Output (insight with type + content)
 - Quotes (notable excerpts)
 - Q&A (generated questions and answers)
 
-**Invoked By**: Sources API (`POST /sources/{id}/insights`)
+**Invoked By**: the `run_transformation` command — queued by the Sources API (`POST /sources/{id}/insights`), by source ingestion (one job per transformation, ADR-011) and by notebook default transformations
 
 ---
 

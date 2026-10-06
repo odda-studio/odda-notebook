@@ -34,6 +34,7 @@ def _transformation_response(transformation: Transformation) -> TransformationRe
         apply_default=transformation.apply_default,
         model_id=transformation.model_id,
         group_id=transformation.group_id,
+        max_tokens=transformation.max_tokens,
         created=str(transformation.created),
         updated=str(transformation.updated),
     )
@@ -81,6 +82,7 @@ async def create_transformation(transformation_data: TransformationCreate):
             apply_default=transformation_data.apply_default,
             model_id=transformation_data.model_id,
             group_id=transformation_data.group_id,
+            max_tokens=transformation_data.max_tokens,
         )
         await new_transformation.save()
 
@@ -131,6 +133,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
             output=result["output"],
             transformation_id=execute_request.transformation_id,
             model_id=model_id,
+            usage=result.get("usage"),
         )
 
     except HTTPException:
@@ -242,6 +245,8 @@ async def update_transformation(
                 if not model:
                     raise HTTPException(status_code=404, detail="Model not found")
             transformation.model_id = transformation_update.model_id
+        if "max_tokens" in transformation_update.model_fields_set:
+            transformation.max_tokens = transformation_update.max_tokens  # null = automatic
         if "group_id" in transformation_update.model_fields_set:
             # Explicit null ungroups; a new group must exist.
             if transformation_update.group_id:

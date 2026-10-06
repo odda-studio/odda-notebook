@@ -7,6 +7,7 @@ import { SourceCloudSyncSection } from './SourceCloudSyncSection'
 
 const updateMutate = vi.fn()
 const syncMutate = vi.fn()
+const disconnectMutate = vi.fn()
 let entry: SourceCloudInfo | undefined
 
 vi.mock('@/lib/hooks/use-integrations', () => ({
@@ -14,6 +15,7 @@ vi.mock('@/lib/hooks/use-integrations', () => ({
   useSourceCloudInfo: () => ({ data: undefined }),
   useUpdateSourceSync: () => ({ isPending: false, mutate: updateMutate }),
   useTriggerSourceSync: () => ({ isPending: false, mutate: syncMutate }),
+  useDisconnectSource: () => ({ isPending: false, mutate: disconnectMutate }),
 }))
 
 function makeInfo(overrides: Partial<SourceCloudInfo> = {}): SourceCloudInfo {
@@ -42,6 +44,7 @@ describe('SourceCloudSyncSection', () => {
   beforeEach(() => {
     updateMutate.mockReset()
     syncMutate.mockReset()
+    disconnectMutate.mockReset()
   })
 
   it('renders nothing for sources that are not cloud-imported', () => {
@@ -77,5 +80,23 @@ describe('SourceCloudSyncSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /integrations.syncNow/ }))
     expect(syncMutate).toHaveBeenCalledWith('source:1')
+  })
+
+  it('disconnects the source, optionally deleting it, and closes the view when deleted', () => {
+    entry = makeInfo()
+    const onSourceDeleted = vi.fn()
+    disconnectMutate.mockImplementation((_vars, opts) => opts.onSuccess({ sources_deleted: 1 }))
+    render(<SourceCloudSyncSection sourceId="source:1" onSourceDeleted={onSourceDeleted} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /integrations.disconnectSource/ }))
+    expect(screen.getByText('integrations.disconnectSourceFolderConfirm')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'integrations.alsoDeleteThisSource' }))
+    const confirm = screen
+      .getAllByRole('button', { name: /integrations.disconnectSource/ })
+      .find(b => b.closest('[role="dialog"]'))
+    fireEvent.click(confirm!)
+
+    expect(disconnectMutate.mock.calls[0][0]).toEqual({ sourceId: 'source:1', deleteSource: true })
+    expect(onSourceDeleted).toHaveBeenCalled()
   })
 })

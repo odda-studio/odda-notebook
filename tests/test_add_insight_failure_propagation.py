@@ -11,7 +11,6 @@ DatabaseOperationError so they propagate to the job-level retry/failure
 handling that already exists in commands/source_commands.py.
 """
 
-from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -147,39 +146,7 @@ class TestTransformationGraphPropagatesFailure:
             result = await run_transformation(state, config={"configurable": {}})
 
         mock_add_insight.assert_awaited_once()
-        assert result == {"output": "the transformation output"}
-
-
-class TestSourceGraphTransformContentPropagatesFailure:
-    """open_notebook/graphs/source.py: transform_content() - the other
-    add_insight() caller, invoked during initial source ingestion."""
-
-    @pytest.mark.asyncio
-    async def test_add_insight_failure_propagates_out_of_transform_content(self):
-        from open_notebook.graphs.source import TransformationState, transform_content
-
-        source = make_source()
-        source.full_text = "the source's full text"
-        transformation = MagicMock(title="Summary")
-
-        state = {"source": source, "transformation": transformation}
-
-        with (
-            patch(
-                "open_notebook.graphs.source.transform_graph.ainvoke",
-                new=AsyncMock(return_value={"output": "transformed output"}),
-            ),
-            patch.object(
-                Source,
-                "add_insight",
-                new=AsyncMock(side_effect=DatabaseOperationError("submission failed")),
-            ) as mock_add_insight,
-        ):
-            with pytest.raises(DatabaseOperationError):
-                # cast: mocks stand in for the real Source/Transformation
-                await transform_content(cast(TransformationState, state))
-
-        mock_add_insight.assert_awaited_once()
+        assert result["output"] == "the transformation output"
 
 
 class TestRunTransformationCommandDoesNotReportFalseSuccess:
@@ -192,7 +159,7 @@ class TestRunTransformationCommandDoesNotReportFalseSuccess:
             run_transformation_command,
         )
 
-        source = make_source()
+        source = make_source(full_text="the source's full text")
         transformation = MagicMock(id="transformation:1")
 
         input_data = RunTransformationInput(

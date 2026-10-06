@@ -16,10 +16,11 @@ from surreal_commands import CommandInput, CommandOutput, command, submit_comman
 from open_notebook.ai.models import model_manager
 from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
 from open_notebook.domain.notebook import Note, Source, SourceInsight
-from open_notebook.exceptions import ConfigurationError, ContextLengthExceededError
+from open_notebook.exceptions import PERMANENT_JOB_ERRORS
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
 from open_notebook.utils.job_cancellation import cancellable
+from open_notebook.utils.job_progress import report_progress
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -30,11 +31,7 @@ EMBED_RETRY_CONFIG = {
     "wait_strategy": "exponential_jitter",
     "wait_min": 1,
     "wait_max": 60,
-    "stop_on": [
-        ValueError,
-        ConfigurationError,
-        ContextLengthExceededError,
-    ],  # Don't retry validation/config errors
+    "stop_on": PERMANENT_JOB_ERRORS,  # Don't retry what can't succeed (validation, auth, config)
     "retry_log_level": "warning",
 }
 
@@ -110,6 +107,7 @@ async def _embed_markdown_record(
     embedding back onto the record. Shared by embed_note and embed_insight.
     """
     # 1. Load record
+    await report_progress("preparing")
     record = await loader(record_id)
     if not record:
         raise ValueError(f"{label} '{record_id}' not found")
@@ -125,6 +123,7 @@ async def _embed_markdown_record(
     )
 
     # 3. UPSERT embedding into the record
+    await report_progress("saving_embeddings")
     await repo_query(
         "UPDATE $record_id SET embedding = $embedding",
         {
@@ -163,6 +162,8 @@ class CreateInsightInput(CommandInput):
     content: str
     # Transformation that produced it (None for manually created insights)
     transformation_id: Optional[str] = None
+    # Token usage of the model call that produced it
+    usage: Optional[Dict[str, Any]] = None
 
 
 class CreateInsightOutput(CommandOutput):
@@ -331,12 +332,14 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
 
     async def embed() -> Tuple[Dict[str, Any], str]:
         # 1. Load source
+        await report_progress("preparing")
         source = await Source.get(input_data.source_id)
         if not source:
             raise ValueError(f"Source '{input_data.source_id}' not found")
 
         if not source.full_text or not source.full_text.strip():
             raise ValueError(f"Source '{input_data.source_id}' has no text to embed")
+        await report_progress("chunking", f"{len(source.full_text)} chars")
 
         # 2. DELETE existing embeddings (idempotency)
         logger.debug(f"Deleting existing embeddings for source {input_data.source_id}")
@@ -390,6 +393,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         ]
 
         logger.debug(f"Inserting {len(records)} source_embedding records")
+        await report_progress("saving_embeddings", f"{total_chunks} chunks")
         await repo_insert("source_embedding", records)
 
         return {"chunks_created": total_chunks}, f": {total_chunks} chunks"
@@ -441,13 +445,15 @@ async def create_insight_command(
         )
 
         # 1. Create insight record in database
+        await report_progress("saving_insight", input_data.insight_type)
         result = await repo_query(
             """
             CREATE source_insight CONTENT {
                 "source": $source_id,
                 "insight_type": $insight_type,
                 "content": $content,
-                "transformation": $transformation
+                "transformation": $transformation,
+                "usage": $usage
             };
             """,
             {
@@ -459,6 +465,7 @@ async def create_insight_command(
                     if input_data.transformation_id
                     else None
                 ),
+                "usage": input_data.usage,
             },
         )
 
@@ -470,6 +477,7 @@ async def create_insight_command(
             raise ValueError("Failed to create insight - no ID in result")
 
         # 2. Submit embedding command (fire-and-forget)
+        await report_progress("queueing_embedding")
         submit_command(
             "open_notebook",
             "embed_insight",
@@ -657,6 +665,7 @@ async def rebuild_embeddings_command(
         logger.info(f"Embedding model configured: {EMBEDDING_MODEL}")
 
         # Collect items to process (returns IDs only)
+        await report_progress("collecting")
         items = await collect_items_for_rebuild(
             input_data.mode,
             input_data.include_sources,
@@ -680,6 +689,7 @@ async def rebuild_embeddings_command(
             )
 
         # Submit one embedding command per item, per kind
+        await report_progress("queueing_jobs", str(total_items), total=total_items)
         sources_submitted, sources_failed = _submit_embedding_jobs(
             "source", "embed_source", "source_id", items["sources"]
         )

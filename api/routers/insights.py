@@ -28,6 +28,7 @@ async def get_insight(insight_id: str):
             source_id=source.id or "",
             insight_type=insight.insight_type,
             content=insight.content,
+            usage=insight.usage,
             created=insight.created.isoformat() if insight.created else None,
             updated=insight.updated.isoformat() if insight.updated else None,
         )

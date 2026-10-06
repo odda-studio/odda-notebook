@@ -1,11 +1,13 @@
 'use client'
 
-import { ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Loader2, RefreshCw, Unplug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
+  useDisconnectSource,
   useSourceCloudEntry,
   useSourceCloudInfo,
   useTriggerSourceSync,
@@ -20,19 +22,24 @@ import {
   RelativeTime,
   SyncStatusBadge,
 } from './integration-utils'
+import { RemoveCloudDialog } from './RemoveCloudDialog'
 
 interface SourceCloudSyncSectionProps {
   sourceId: string
+  /** Called when the user deletes the source from here (e.g. close its view). */
+  onSourceDeleted?: () => void
 }
 
 /** "Cloud sync" block of the source detail view; renders nothing for non-cloud sources. */
-export function SourceCloudSyncSection({ sourceId }: SourceCloudSyncSectionProps) {
+export function SourceCloudSyncSection({ sourceId, onSourceDeleted }: SourceCloudSyncSectionProps) {
   const { t } = useTranslation()
   const mapEntry = useSourceCloudEntry(sourceId)
   // The map says whether the source is cloud-imported; the per-source call keeps it fresh
   const { data: fresh } = useSourceCloudInfo(sourceId, !!mapEntry)
   const updateSync = useUpdateSourceSync()
   const triggerSync = useTriggerSourceSync()
+  const disconnect = useDisconnectSource()
+  const [disconnectOpen, setDisconnectOpen] = useState(false)
 
   const info = fresh ?? mapEntry
   if (!info) return null
@@ -115,21 +122,58 @@ export function SourceCloudSyncSection({ sourceId }: SourceCloudSyncSectionProps
             )}
           </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => triggerSync.mutate(sourceId)}
-          disabled={isBusy || triggerSync.isPending}
-        >
-          {triggerSync.isPending || isBusy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          {t('integrations.syncNow')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => triggerSync.mutate(sourceId)}
+            disabled={isBusy || triggerSync.isPending}
+          >
+            {triggerSync.isPending || isBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {t('integrations.syncNow')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDisconnectOpen(true)}
+          >
+            <Unplug className="h-4 w-4" />
+            {t('integrations.disconnectSource')}
+          </Button>
+        </div>
       </div>
+
+      <RemoveCloudDialog
+        open={disconnectOpen}
+        onOpenChange={setDisconnectOpen}
+        title={t('integrations.disconnectSourceTitle')}
+        description={
+          fromFolder
+            ? t('integrations.disconnectSourceFolderConfirm', { name: info.link_name })
+            : t('integrations.disconnectSourceFileConfirm')
+        }
+        confirmText={t('integrations.disconnectSource')}
+        deleteLabel={t('integrations.alsoDeleteThisSource')}
+        onConfirm={deleteSource =>
+          disconnect.mutate(
+            { sourceId, deleteSource },
+            {
+              onSuccess: result => {
+                setDisconnectOpen(false)
+                if (result.sources_deleted) onSourceDeleted?.()
+              },
+            }
+          )
+        }
+        isLoading={disconnect.isPending}
+      />
     </section>
   )
 }

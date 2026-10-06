@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional, Set
 from api.models import (
     ActivityCounts,
     ActivityJob,
+    ActivityJobDetail,
+    ActivityProgress,
     ActivityResponse,
+    CancelJobsRequest,
     CancelJobsResponse,
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -25,6 +28,8 @@ from open_notebook.utils.job_cancellation import request_cancel
 ACTIVE_STATUSES = ["new", "running"]
 FINISHED_STATUSES = ["completed", "failed", "canceled"]
 MAX_ERROR_LENGTH = 300
+# args/result strings longer than this are truncated in the job detail
+MAX_VALUE_LENGTH = 500
 
 # command name -> stage shown in the UI
 STAGES: Dict[str, str] = {
@@ -40,7 +45,8 @@ STAGES: Dict[str, str] = {
 }
 
 _FIELDS = (
-    "id, name, status, args, error_message, created, started_at, finished_at, cancel_requested"
+    "id, name, status, args, error_message, created, started_at, finished_at, "
+    "cancel_requested, progress, attempts, llm_usage"
 )
 # dismissed jobs are hidden from the activity view
 _VISIBLE = "(dismissed = NONE OR dismissed = false)"
@@ -52,6 +58,18 @@ def _iso(value: Any) -> Optional[str]:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _progress(value: Any) -> Optional[ActivityProgress]:
+    if not isinstance(value, dict) or not value.get("step"):
+        return None
+    return ActivityProgress(
+        step=str(value["step"]),
+        detail=value.get("detail"),
+        current=value.get("current"),
+        total=value.get("total"),
+        at=_iso(value.get("at")),
+    )
 
 
 def _error(row: Dict[str, Any]) -> Optional[str]:
@@ -144,6 +162,10 @@ async def _to_jobs(rows: List[Dict[str, Any]]) -> List[ActivityJob]:
                 retryable=(
                     status == "failed" and name == "process_source" and target_id in sources
                 ),
+                # a finished job keeps its last step, which no longer describes it
+                progress=_progress(row.get("progress")) if status in ACTIVE_STATUSES else None,
+                attempts=int(row.get("attempts") or 0),
+                llm_usage=[u for u in row.get("llm_usage") or [] if isinstance(u, dict)],
             )
         )
     return jobs
@@ -193,6 +215,88 @@ async def get_activity(hours: int = 24, limit: int = 200) -> ActivityResponse:
 # =============================================================================
 # Actions
 # =============================================================================
+
+
+def _truncate(value: Any) -> Any:
+    """Make job args/results safe to show: long texts (source content, podcast
+    transcripts) are cut, record ids become strings."""
+    if isinstance(value, dict):
+        return {str(k): _truncate(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_truncate(v) for v in value[:100]]
+    if isinstance(value, str):
+        if len(value) > MAX_VALUE_LENGTH:
+            return f"{value[:MAX_VALUE_LENGTH]}… ({len(value)} chars)"
+        return value
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)
+
+
+async def _notebook_names(args: Dict[str, Any], job: ActivityJob) -> List[str]:
+    ids = [str(n) for n in args.get("notebook_ids") or []]
+    if not ids and job.target_type == "source" and job.target_id:
+        rows = await repo_query(
+            "SELECT VALUE out FROM reference WHERE in = $source",
+            {"source": ensure_record_id(job.target_id)},
+        )
+        ids = [str(r) for r in rows if r]
+    if not ids:
+        return []
+    names = await _titles("notebook", set(ids), "name")
+    return [names[i] for i in ids if i in names]
+
+
+async def get_job(job_id: str) -> ActivityJobDetail:
+    rows = await repo_query("SELECT * FROM $id", {"id": ensure_record_id(job_id)})
+    if not rows or not rows[0].get("name"):
+        raise NotFoundError("Job not found")
+    row = rows[0]
+    job = (await _to_jobs([row]))[0]
+    args = row.get("args") or {}
+    result = row.get("result")
+    return ActivityJobDetail(
+        **job.model_dump(),
+        args=_truncate(args),
+        result=_truncate(result) if isinstance(result, dict) and result else None,
+        full_error=row.get("error_message") or None,
+        progress_log=[
+            p for p in (_progress(e) for e in row.get("progress_log") or []) if p
+        ],
+        cancel_requested_at=_iso(row.get("cancel_requested_at")),
+        notebooks=await _notebook_names(args, job),
+    )
+
+
+async def cancel_jobs(selection: CancelJobsRequest) -> CancelJobsResponse:
+    """Stop a set of queued/running jobs: the given ids, a whole stage, or all."""
+    selectors = sum([bool(selection.job_ids), bool(selection.stage), selection.all])
+    if selectors != 1:
+        raise InvalidInputError("Pass exactly one of job_ids, stage or all")
+
+    if selection.job_ids:
+        job_ids = selection.job_ids
+    else:
+        query = "SELECT id, name FROM command WHERE status IN $statuses"
+        params: Dict[str, Any] = {"statuses": ACTIVE_STATUSES}
+        if selection.stage == "other":
+            query += " AND name NOT IN $names"
+            params["names"] = list(STAGES)
+        elif selection.stage:
+            names = [n for n, stage in STAGES.items() if stage == selection.stage]
+            if not names:
+                raise InvalidInputError(f"Unknown stage: {selection.stage}")
+            query += " AND name IN $names"
+            params["names"] = names
+        job_ids = [str(r["id"]) for r in await repo_query(query, params)]
+
+    canceled = stopping = 0
+    for job_id in job_ids:
+        status = await request_cancel(job_id)
+        if status:
+            canceled += 1
+            stopping += status == "running"
+    return CancelJobsResponse(canceled=canceled, stopping=stopping, deleted_target=False)
 
 
 async def cancel_job(job_id: str) -> CancelJobsResponse:

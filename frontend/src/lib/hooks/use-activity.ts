@@ -1,17 +1,25 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { activityApi, ActivityCounts, ActivityResponse } from '@/lib/api/activity'
+import {
+  activityApi,
+  ActivityCounts,
+  ActivityJobDetail,
+  ActivityResponse,
+  CancelJobsSelection,
+} from '@/lib/api/activity'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 
 /** Poll interval for the activity page while jobs are queued/running. */
-export const ACTIVITY_ACTIVE_POLL_MS = 3000
+export const ACTIVITY_ACTIVE_POLL_MS = 2000
 /** Poll interval for the activity page when nothing is in progress. */
 export const ACTIVITY_IDLE_POLL_MS = 15000
 /** Poll interval for the sidebar badge. */
 export const ACTIVITY_SUMMARY_POLL_MS = 5000
+/** Poll interval of an open job detail while the job is queued/running. */
+export const ACTIVITY_JOB_POLL_MS = 1000
 
 /**
  * When the number of active jobs drops, some job finished: refresh the data
@@ -79,6 +87,29 @@ function useActivityMutation<TArgs, TResult>(
       toast.error(getApiErrorMessage(error, (key) => t(key), errorKey))
     },
   })
+}
+
+/** One job in full; polled every second while it is queued/running. */
+export function useActivityJob(jobId: string | null) {
+  return useQuery<ActivityJobDetail>({
+    queryKey: QUERY_KEYS.activityJob(jobId ?? ''),
+    queryFn: () => activityApi.getJob(jobId as string),
+    enabled: !!jobId,
+    staleTime: 0,
+    refetchInterval: (q) => {
+      const status = (q.state.data as ActivityJobDetail | undefined)?.status
+      return status === 'new' || status === 'running' ? ACTIVITY_JOB_POLL_MS : false
+    },
+  })
+}
+
+/** Stop a selection of jobs, a whole stage, or everything. */
+export function useCancelJobs() {
+  return useActivityMutation(
+    (selection: CancelJobsSelection) => activityApi.cancelJobs(selection),
+    (r, t) => t('activity.canceledJobsToast', { count: r.canceled }),
+    'activity.cancelFailed'
+  )
 }
 
 /** Stop one queued/running job. */

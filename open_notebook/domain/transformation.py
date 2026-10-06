@@ -31,7 +31,7 @@ class TransformationGroup(ObjectModel):
 
 class Transformation(ObjectModel):
     table_name: ClassVar[str] = "transformation"
-    nullable_fields: ClassVar[set[str]] = {"model_id", "group_id"}
+    nullable_fields: ClassVar[set[str]] = {"model_id", "group_id", "max_tokens"}
     name: str
     title: str
     description: str
@@ -39,6 +39,8 @@ class Transformation(ObjectModel):
     apply_default: bool
     model_id: Optional[str] = None
     group_id: Optional[str] = None
+    # Output budget of the model call; None = automatic (see graphs/transformation.py)
+    max_tokens: Optional[int] = None
 
     @field_validator("group_id", mode="before")
     @classmethod

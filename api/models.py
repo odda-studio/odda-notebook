@@ -147,6 +147,23 @@ class ProviderAvailabilityResponse(BaseModel):
     )
 
 
+class LlmUsage(BaseModel):
+    """Token usage of one LLM call (fields a provider doesn't report are null)."""
+
+    model: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = Field(None, description="Reasoning included")
+    reasoning_tokens: Optional[int] = None
+    cached_input_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    max_output_tokens: Optional[int] = Field(None, description="Output budget of the call")
+    prompt_tokens_estimate: Optional[int] = Field(
+        None, description="Local estimate of the prompt before sending it"
+    )
+    finish_reason: Optional[str] = Field(None, description="'length' = budget exhausted")
+    duration_seconds: Optional[float] = None
+
+
 # Transformations API models
 class TransformationCreate(BaseModel):
     name: str = Field(..., description="Transformation name")
@@ -163,6 +180,15 @@ class TransformationCreate(BaseModel):
     )
     group_id: Optional[str] = Field(
         None, description="Transformation group, or null for ungrouped"
+    )
+    max_tokens: Optional[int] = Field(
+        None,
+        ge=256,
+        le=200_000,
+        description=(
+            "Max output tokens of the model call (reasoning included); "
+            "null = automatic: 8192, 32768 for reasoning models"
+        ),
     )
 
 
@@ -185,6 +211,15 @@ class TransformationUpdate(BaseModel):
         None,
         description="Transformation group; send null explicitly to ungroup, omit to keep",
     )
+    max_tokens: Optional[int] = Field(
+        None,
+        ge=256,
+        le=200_000,
+        description=(
+            "Max output tokens of the model call (reasoning included); "
+            "send null to go back to automatic, omit to keep; null = automatic: 8192, 32768 for reasoning models"
+        ),
+    )
 
 
 class TransformationResponse(BaseModel):
@@ -196,6 +231,7 @@ class TransformationResponse(BaseModel):
     apply_default: bool
     model_id: Optional[str] = None
     group_id: Optional[str] = None
+    max_tokens: Optional[int] = None
     created: str
     updated: str
 
@@ -244,6 +280,7 @@ class TransformationExecuteResponse(BaseModel):
     output: str = Field(..., description="Transformed text")
     transformation_id: str = Field(..., description="ID of the transformation used")
     model_id: Optional[str] = Field(None, description="Model ID used")
+    usage: Optional[LlmUsage] = Field(None, description="Token usage of the model call")
 
 
 # Default Prompt API models
@@ -478,6 +515,7 @@ class SourceInsightResponse(BaseModel):
     source_id: str
     insight_type: str
     content: str
+    usage: Optional[LlmUsage] = Field(None, description="Model call that produced it")
     # Optional: insights created before migration 19 have no timestamps,
     # and the API must return null for them (never the string "None").
     created: Optional[str] = None
@@ -1097,6 +1135,42 @@ class IntegrationMessageResponse(BaseModel):
     message: str
 
 
+class CloudRemovalResponse(BaseModel):
+    """Outcome of removing a link/account/source from cloud sync."""
+
+    message: str
+    sources_deleted: int = 0
+    jobs_canceled: int = Field(0, description="Background jobs stopped (syncs, processing)")
+
+
+class SourceDisconnectRequest(BaseModel):
+    delete_source: bool = Field(
+        False,
+        description="Delete the source too; otherwise it is kept as a regular source",
+    )
+
+
+SyncedFileBulkAction = Literal["stop_sync", "resume_sync", "disconnect", "delete", "include"]
+
+
+class SyncedFilesBulkRequest(BaseModel):
+    file_ids: List[str] = Field(..., min_length=1, max_length=1000)
+    action: SyncedFileBulkAction = Field(
+        ...,
+        description=(
+            "stop_sync/resume_sync: toggle sync of the files; disconnect: never sync "
+            "again, keep the sources as regular ones; delete: never sync again and "
+            "delete the sources; include: undo a disconnect/exclusion"
+        ),
+    )
+
+
+class SyncedFilesBulkResponse(BaseModel):
+    updated: int
+    sources_deleted: int = 0
+    jobs_canceled: int = 0
+
+
 # Bulk source deletion (the "delete selected" / "delete all" toolbar on the
 # general Sources page)
 class SourceCountResponse(BaseModel):
@@ -1130,6 +1204,14 @@ class SourceBulkDeleteResponse(BaseModel):
 
 
 # Activity view (background jobs: extraction, transformations, embeddings, sync)
+class ActivityProgress(BaseModel):
+    step: str = Field(..., description="Step code, translated by the UI (activity.steps.<step>)")
+    detail: Optional[str] = Field(None, description="File name, model, counts...")
+    current: Optional[int] = None
+    total: Optional[int] = None
+    at: Optional[str] = Field(None, description="When the step was reported")
+
+
 class ActivityJob(BaseModel):
     id: str = Field(..., description="Command id")
     name: str = Field(..., description="Command name, e.g. process_source")
@@ -1156,6 +1238,28 @@ class ActivityJob(BaseModel):
     cancel_requested: bool = Field(
         False, description="Stop requested: a running job shows as stopping until it ends"
     )
+    progress: Optional[ActivityProgress] = Field(
+        None, description="What the job is doing right now (reported by the worker)"
+    )
+    attempts: int = Field(0, description="Execution attempts so far (retries included)")
+    llm_usage: List[LlmUsage] = Field(
+        default_factory=list, description="Every LLM call made by the job, oldest first"
+    )
+
+
+class ActivityJobDetail(ActivityJob):
+    args: Dict[str, Any] = Field(
+        default_factory=dict, description="Job input (long texts truncated)"
+    )
+    result: Optional[Dict[str, Any]] = Field(
+        None, description="Job output once finished (long texts truncated)"
+    )
+    full_error: Optional[str] = None
+    progress_log: List[ActivityProgress] = Field(
+        default_factory=list, description="Timeline: one entry per step, oldest first"
+    )
+    cancel_requested_at: Optional[str] = None
+    notebooks: List[str] = Field(default_factory=list, description="Notebook names")
 
 
 class ActivityCounts(BaseModel):
@@ -1175,6 +1279,14 @@ class CancelTargetRequest(BaseModel):
     target_type: Literal["source", "link"]
     target_id: str
     delete_target: bool = Field(False, description="Also delete the source")
+
+
+class CancelJobsRequest(BaseModel):
+    """Exactly one selector: explicit jobs, every job of a stage, or everything."""
+
+    job_ids: Optional[List[str]] = Field(None, max_length=500)
+    stage: Optional[str] = Field(None, description="Stop every queued/running job of this stage")
+    all: bool = Field(False, description="Stop every queued/running job")
 
 
 class CancelJobsResponse(BaseModel):

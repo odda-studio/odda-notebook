@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable, Optional, TypeVar
 from loguru import logger
 
 from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.utils.job_progress import bind_job, record_attempt, report_progress
 
 POLL_SECONDS = 2.0
 CANCEL_MESSAGE = "Canceled by user"
@@ -95,22 +96,27 @@ def cancellable(func: F) -> F:
             logger.info(f"Job {command_id} was canceled before it started")
             raise JobCanceled()
 
-        job = asyncio.ensure_future(func(input_data))
-        watcher = asyncio.ensure_future(_wait_for_cancel(command_id))
-        try:
-            done, _ = await asyncio.wait({job, watcher}, return_when=asyncio.FIRST_COMPLETED)
-        except asyncio.CancelledError:
-            job.cancel()
-            watcher.cancel()
-            raise
-        if job in done:
-            watcher.cancel()
-            return job.result()
+        with bind_job(command_id):
+            attempt = await record_attempt(command_id)
+            await report_progress("retrying" if attempt > 1 else "started", str(attempt))
+            # the job task copies the context, so it reports under this id too
+            job = asyncio.ensure_future(func(input_data))
+            watcher = asyncio.ensure_future(_wait_for_cancel(command_id))
+            try:
+                done, _ = await asyncio.wait({job, watcher}, return_when=asyncio.FIRST_COMPLETED)
+            except asyncio.CancelledError:
+                job.cancel()
+                watcher.cancel()
+                raise
+            if job in done:
+                watcher.cancel()
+                return job.result()
 
-        logger.info(f"Canceling job {command_id} on user request")
-        job.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await job
-        raise JobCanceled()
+            logger.info(f"Canceling job {command_id} on user request")
+            await report_progress("stopping")
+            job.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await job
+            raise JobCanceled()
 
     return wrapper  # type: ignore[return-value]

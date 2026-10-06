@@ -16,6 +16,7 @@ from open_notebook.podcasts.models import (
     _resolve_model_config,
 )
 from open_notebook.utils.job_cancellation import cancellable
+from open_notebook.utils.job_progress import graph_node_steps, report_progress
 from open_notebook.utils.model_utils import full_model_dump
 
 try:
@@ -63,6 +64,15 @@ class PodcastGenerationOutput(CommandOutput):
     error_message: Optional[str] = None
 
 
+# podcast-creator graph node -> activity step
+PODCAST_STEPS = {
+    "generate_outline": "podcast_outline",
+    "generate_transcript": "podcast_transcript",
+    "generate_all_audio": "podcast_audio",
+    "combine_audio": "podcast_combining",
+}
+
+
 @command("generate_podcast", app="open_notebook", retry={"max_attempts": 1})
 @cancellable
 async def generate_podcast_command(
@@ -80,6 +90,7 @@ async def generate_podcast_command(
         logger.info(f"Using episode profile: {input_data.episode_profile}")
 
         # 1. Load Episode and Speaker profiles from SurrealDB
+        await report_progress("preparing", input_data.episode_profile)
         episode_profile = await EpisodeProfile.get_by_name(input_data.episode_profile)
         if not episode_profile:
             raise ValueError(
@@ -300,14 +311,16 @@ async def generate_podcast_command(
         # 8. Generate podcast using podcast-creator
         logger.info("Starting podcast generation with podcast-creator...")
 
-        result = await create_podcast(
-            content=input_data.content,
-            briefing=briefing,
-            episode_name=episode_dir_name,
-            output_dir=str(output_dir),
-            speaker_config=speaker_profile.name,
-            episode_profile=episode_profile.name,
-        )
+        with graph_node_steps(PODCAST_STEPS):
+            result = await create_podcast(
+                content=input_data.content,
+                briefing=briefing,
+                episode_name=episode_dir_name,
+                output_dir=str(output_dir),
+                speaker_config=speaker_profile.name,
+                episode_profile=episode_profile.name,
+            )
+        await report_progress("saving_episode")
 
         # podcast-creator reports audio-combination failures IN-BAND: on
         # ffmpeg/clip errors combine_audio_files() returns an "ERROR: ..."

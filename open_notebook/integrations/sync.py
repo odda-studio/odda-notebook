@@ -48,6 +48,7 @@ from open_notebook.integrations.base import (
 )
 from open_notebook.integrations.registry import get_provider
 from open_notebook.integrations.tokens import get_valid_access_token
+from open_notebook.utils.job_progress import report_progress
 from open_notebook.utils.notebook_transformations import (
     merge_transformation_ids,
     notebook_default_transformations,
@@ -453,12 +454,14 @@ async def run_sync(link_id: str) -> SyncResult:
 
     error: Optional[str] = None
     try:
+        await report_progress("connecting", link.name)
         account = await IntegrationAccount.get(link.account)
         provider = await get_provider(account.provider)
         token = await get_valid_access_token(account, provider)
         settings = await IntegrationSettings.load_fresh()
         content_settings: ContentSettings = await ContentSettings.get_instance()  # type: ignore[assignment]
 
+        await report_progress("listing_files", link.remote_path)
         remote_files = await _list_remote(provider, token, link, settings.google_export_formats)
         if link.kind == "file" and remote_files and remote_files[0].name != link.name:
             await _set_link_state(link_id, name=remote_files[0].name)
@@ -483,7 +486,25 @@ async def run_sync(link_id: str) -> SyncResult:
             result=result,
         )
 
-        async def guarded(label: str, remote: Optional[RemoteFile], mapping, coro):
+        total = (
+            len(plan.new) + len(plan.changed) + len(plan.renamed)
+            + len(plan.removed) + len(plan.skipped)
+        )
+        done = 0
+        await report_progress(
+            "planning",
+            f"{len(plan.new)} new, {len(plan.changed)} changed, {len(plan.renamed)} renamed, "
+            f"{len(plan.removed)} removed, {plan.unchanged} unchanged",
+            current=0,
+            total=total,
+        )
+
+        async def guarded(
+            step: str, label: str, remote: Optional[RemoteFile], mapping, coro
+        ):
+            nonlocal done
+            done += 1
+            await report_progress(step, label, current=done, total=total)
             try:
                 await coro
             except (ProviderAuthError, ConfigurationError):
@@ -499,15 +520,21 @@ async def run_sync(link_id: str) -> SyncResult:
                         logger.warning(f"Could not record sync error: {mark_error}")
 
         for remote, existing in plan.new:
-            await guarded(remote.path, remote, existing, runner.import_new(remote, existing))
+            await guarded(
+                "importing", remote.path, remote, existing, runner.import_new(remote, existing)
+            )
         for remote, mapping in plan.changed:
-            await guarded(remote.path, remote, mapping, runner.update_changed(remote, mapping))
+            await guarded(
+                "updating", remote.path, remote, mapping, runner.update_changed(remote, mapping)
+            )
         for remote, mapping in plan.renamed:
-            await guarded(remote.path, remote, mapping, runner.rename(remote, mapping))
+            await guarded("renaming", remote.path, remote, mapping, runner.rename(remote, mapping))
         for mapping in plan.removed:
-            await guarded(mapping.remote_path or mapping.name, None, None, runner.remove(mapping))
+            await guarded(
+                "removing", mapping.remote_path or mapping.name, None, None, runner.remove(mapping)
+            )
         for remote in plan.skipped:
-            await guarded(remote.path, remote, None, runner.record_skipped(remote))
+            await guarded("skipping", remote.path, remote, None, runner.record_skipped(remote))
 
         if result.failed:
             error = f"{result.failed} file(s) failed: " + "; ".join(result.errors[:3])

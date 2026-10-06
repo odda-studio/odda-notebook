@@ -19,6 +19,7 @@ from api import integrations_service as service
 from api.models import (
     AuthorizeUrlResponse,
     BrowseResponse,
+    CloudRemovalResponse,
     IntegrationAccountResponse,
     IntegrationMessageResponse,
     IntegrationProviderResponse,
@@ -29,9 +30,12 @@ from api.models import (
     LinkImportResponse,
     RemoteSearchResponse,
     SourceCloudInfoResponse,
+    SourceDisconnectRequest,
     SourceSyncUpdate,
     SyncedFileExcludeRequest,
     SyncedFileResponse,
+    SyncedFilesBulkRequest,
+    SyncedFilesBulkResponse,
     SyncedFileUpdate,
     SyncLinkResponse,
     SyncLinkUpdate,
@@ -113,10 +117,12 @@ async def list_accounts():
     return await service.list_accounts()
 
 
-@router.delete("/accounts/{account_id}", response_model=IntegrationMessageResponse)
-async def delete_account(account_id: str):
-    await service.delete_account(account_id)
-    return IntegrationMessageResponse(message="Account disconnected")
+@router.delete("/accounts/{account_id}", response_model=CloudRemovalResponse)
+async def delete_account(
+    account_id: str,
+    delete_sources: bool = Query(False, description="Also delete the sources it imported"),
+):
+    return await service.delete_account(account_id, delete_sources)
 
 
 @router.get("/accounts/{account_id}/search", response_model=RemoteSearchResponse)
@@ -157,10 +163,13 @@ async def update_link(link_id: str, data: SyncLinkUpdate):
     return await service.update_link(link_id, data)
 
 
-@router.delete("/links/{link_id}", response_model=IntegrationMessageResponse)
-async def delete_link(link_id: str):
-    await service.delete_link(link_id)
-    return IntegrationMessageResponse(message="Link removed; imported sources were kept")
+@router.delete("/links/{link_id}", response_model=CloudRemovalResponse)
+async def delete_link(
+    link_id: str,
+    delete_sources: bool = Query(False, description="Also delete the sources it imported"),
+):
+    """Stop syncing a link (its running sync is stopped too)."""
+    return await service.delete_link(link_id, delete_sources)
 
 
 @router.post("/links/{link_id}/sync", response_model=SyncTriggerResponse)
@@ -184,6 +193,12 @@ async def set_file_sync(file_id: str, data: SyncedFileUpdate):
 @router.post("/synced-files/{file_id}/exclude", response_model=SyncedFileResponse)
 async def exclude_file(file_id: str, data: SyncedFileExcludeRequest):
     return await service.exclude_file(file_id, data.delete_source)
+
+
+@router.post("/synced-files/bulk", response_model=SyncedFilesBulkResponse)
+async def bulk_files(data: SyncedFilesBulkRequest):
+    """Apply one action to several files of a link."""
+    return await service.bulk_files(data.file_ids, data.action)
 
 
 @router.post("/synced-files/{file_id}/include", response_model=SyncedFileResponse)
@@ -212,3 +227,9 @@ async def set_source_sync(source_id: str, data: SourceSyncUpdate):
 @router.post("/sources/{source_id}/sync", response_model=SyncTriggerResponse)
 async def trigger_source_sync(source_id: str):
     return _queued_or_conflict(await service.trigger_source_sync(source_id))
+
+
+@router.post("/sources/{source_id}/disconnect", response_model=CloudRemovalResponse)
+async def disconnect_source(source_id: str, data: SourceDisconnectRequest):
+    """Stop syncing this source for good; keep it as a regular source or delete it."""
+    return await service.disconnect_source(source_id, data.delete_source)
