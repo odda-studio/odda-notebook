@@ -13,6 +13,12 @@
 		max_size 110MB
 	}
 
+	# API docs (Swagger / ReDoc) live on the API port, outside the /api/*
+	# prefix Next.js forwards. Public by design: the schema is readable by
+	# anyone, but calls still need the password (Authorize → Bearer).
+	@apidocs path /docs /docs/* /redoc /openapi.json
+	reverse_proxy @apidocs open_notebook:5055
+
 	reverse_proxy open_notebook:8502 {
 		# Stream chat / widget answers (Server-Sent Events) without buffering.
 		flush_interval -1

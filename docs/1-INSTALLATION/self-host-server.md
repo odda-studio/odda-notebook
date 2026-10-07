@@ -82,5 +82,6 @@ Back up `surreal_data/` and `notebook_data/` regularly (e.g. a nightly cron with
 ## Security notes
 
 - Auth is a single shared password and CORS is open: fine for a small team, not a hardened multi-tenant setup. For internal-only use, consider restricting access further (VPN, IP allowlist in Caddy). The [website widget](../3-USER-GUIDE/website-widget.md) needs `/api/widget/*` reachable publicly.
+- The API docs are served publicly at `https://<DOMAIN>/docs` (Swagger) and `/redoc`: anyone can read the schema, but calls still require the password (click **Authorize** and paste it as Bearer token). Remove the `@apidocs` route from the `Caddyfile` to hide them.
 - Uploads are capped by `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` (default 100); keep `request_body max_size` in the `Caddyfile` above it.
 - See [Security](../5-CONFIGURATION/security.md) and [Reverse Proxy](../5-CONFIGURATION/reverse-proxy.md) for more.
