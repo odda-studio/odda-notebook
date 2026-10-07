@@ -35,6 +35,7 @@ All attributes are kebab-case, observed (changing them updates the UI).
 | `persist` | both | `session` | `session` keeps the conversation in `sessionStorage` (key `odda-notebook-widget:<notebook-id>`); `none` disables |
 | `show-reset` | both | `true` | Show the "new conversation" button |
 | `max-history` | both | `10` | Completed messages sent as history (max 10) |
+| `debug` | both | absent | Boolean: log request, each streamed token and the final answer to the browser console |
 | `height` | chat | `100%` of host | CSS length. Host is `display:block`, default `height:520px; min-height:360px` (override with CSS on the element) |
 | `open` | chatbot | absent | Boolean, reflected |
 | `position` | chatbot | `bottom-right` | `bottom-right` or `bottom-left` |

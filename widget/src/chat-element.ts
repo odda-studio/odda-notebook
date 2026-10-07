@@ -30,6 +30,7 @@ const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12
 export const CHAT_ATTRS = [
   "api-url", "notebook-id", "widget-key", "title", "placeholder", "welcome-message", "suggestions",
   "search-mode", "lang", "theme", "primary-color", "persist", "show-reset", "max-history",
+  "debug",
 ] as const;
 
 export function parseSuggestions(raw: string | null): string[] {
@@ -157,6 +158,10 @@ export class OddaNotebookChat extends HTMLElement {
   private get searchMode(): SearchMode {
     const v = this.getAttribute("search-mode");
     return v === "insights" || v === "full" || v === "insights-first" ? v : "insights-first";
+  }
+  private get debugOn(): boolean {
+    const v = this.getAttribute("debug");
+    return v !== null && v !== "false";
   }
   private get persistOn(): boolean {
     return (this.getAttribute("persist") ?? "session") !== "none";
@@ -491,20 +496,29 @@ export class OddaNotebookChat extends HTMLElement {
     this.syncControls();
     const hadFocus = !!this.shadowRoot?.activeElement;
     let failure: WidgetApiError | null = null;
+    const debug = this.debugOn;
+    const t0 = performance.now();
+    let tokens = 0;
+    const body = {
+      notebook_id: this.getAttribute("notebook-id") ?? "",
+      message,
+      history,
+      search_mode: this.searchMode,
+      language: this.uiLang,
+    };
+    if (debug) console.log("[odda-notebook-widget] request", body);
     try {
       await streamChat({
         apiUrl: this.getAttribute("api-url") ?? "",
         widgetKey: this.getAttribute("widget-key") ?? "",
         signal: controller.signal,
         fetchImpl: (...args) => fetch(...args),
-        body: {
-          notebook_id: this.getAttribute("notebook-id") ?? "",
-          message,
-          history,
-          search_mode: this.searchMode,
-          language: this.uiLang,
-        },
+        body,
         onToken: (text) => {
+          if (debug) {
+            tokens++;
+            console.log(`[odda-notebook-widget] token #${tokens} +${Math.round(performance.now() - t0)}ms`, JSON.stringify(text));
+          }
           a.content += text;
           this.scheduleFlush(a);
         },
@@ -513,6 +527,13 @@ export class OddaNotebookChat extends HTMLElement {
       if (!(controller.signal.aborted && this.stopped)) {
         failure = e instanceof WidgetApiError ? e : new WidgetApiError("network", e instanceof Error ? e.message : String(e));
       }
+    }
+    if (debug) {
+      const status = failure ? `error (${failure.kind}: ${failure.message})` : this.stopped ? "stopped" : "done";
+      console.log(
+        `[odda-notebook-widget] stream ${status}: ${tokens} tokens, ${a.content.length} chars, ${Math.round(performance.now() - t0)}ms`,
+      );
+      console.log("[odda-notebook-widget] answer\n" + a.content);
     }
     this.flushTarget = a;
     this.flushNow();

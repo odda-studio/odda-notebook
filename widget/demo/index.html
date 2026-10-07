@@ -11,20 +11,32 @@
   label{display:flex;flex-direction:column;font-size:13px;gap:4px}
   input,select,button{font:inherit;padding:6px 8px}
   odda-notebook-chat{max-width:480px;--onw-radius:14px}
+  [hidden]{display:none!important}
 </style>
 </head>
 <body>
 <h1>Odda Notebook widget</h1>
-<p>Run <code>npm run dev</code> and open this page: the mock server answers at the same origin.</p>
+<p>Run <code>npm run dev</code> and open this page: the mock server answers at the same origin.
+  <em>Local</em> talks to your local Odda Notebook API (<code>make api</code> + <code>make worker-start</code>): it lists the notebooks and creates a widget key for the one you pick.</p>
 
 <div class="panel">
   <label>Backend
     <select id="mode">
       <option value="mock">Mock server (this origin)</option>
+      <option value="local">Local server</option>
       <option value="custom">Custom API</option>
     </select>
   </label>
-  <label>Mock scenario (widget-key)
+  <label class="local">Local API URL <input id="localUrl" value="http://localhost:5055"></label>
+  <label class="local">API password (if set) <input id="localPwd" type="password" placeholder="OPEN_NOTEBOOK_PASSWORD"></label>
+  <label class="local">Notebook
+    <select id="localNb"><option value="">(loading...)</option></select>
+  </label>
+  <label class="local">Widget key
+    <span style="display:flex;gap:6px"><input id="localKey" placeholder="created automatically" readonly size="18"><button id="newKey" type="button">New key</button></span>
+  </label>
+  <p class="local" id="localStatus" style="flex-basis:100%;margin:0;font-size:13px"></p>
+  <label class="mock">Mock scenario (widget-key)
     <select id="scenario">
       <option value="ok">ok - streams an answer</option>
       <option value="bad">bad - 401</option>
@@ -33,9 +45,9 @@
       <option value="fail">fail - error event</option>
     </select>
   </label>
-  <label>API URL (custom) <input id="url" placeholder="https://notebooks.example.com"></label>
-  <label>Widget key (custom) <input id="key" placeholder="onw_..."></label>
-  <label>Notebook id (custom) <input id="nb" value="notebook:demo"></label>
+  <label class="custom">API URL (custom) <input id="url" placeholder="https://notebooks.example.com"></label>
+  <label class="custom">Widget key (custom) <input id="key" placeholder="onw_..."></label>
+  <label class="custom">Notebook id (custom) <input id="nb" value="notebook:demo"></label>
   <label>Theme
     <select id="theme"><option>auto</option><option>light</option><option>dark</option></select>
   </label>
@@ -49,7 +61,7 @@
 </div>
 
 <h2>Inline: &lt;odda-notebook-chat&gt;</h2>
-<odda-notebook-chat id="inline"
+<odda-notebook-chat id="inline" debug
   title="Ask the docs"
   welcome-message="Hi! Ask me anything about **this notebook**."
   suggestions='["What is this about?","Summarise the key points"]'
@@ -57,7 +69,7 @@
 
 <h2>Floating: &lt;odda-notebook-chatbot&gt;</h2>
 <p>See the launcher at the bottom-right corner.</p>
-<odda-notebook-chatbot id="bot"
+<odda-notebook-chatbot id="bot" debug
   title="Odda assistant"
   welcome-message="Hello! How can I help?"
   suggestions="What can you do?|Give me an example"
@@ -67,12 +79,88 @@
 <script>
   const els = [document.getElementById("inline"), document.getElementById("bot")];
   const $ = (id) => document.getElementById(id);
+
+  // ---------- local server ----------
+  const localApi = () => $("localUrl").value.trim().replace(/\/+$/, "");
+  const keyStore = (nb) => `onw-demo-key:${localApi()}:${nb}`;
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} },
+  };
+  function status(msg, err) {
+    $("localStatus").textContent = msg;
+    $("localStatus").style.color = err ? "#c00" : "";
+    (err ? console.error : console.log)("[demo:local]", msg);
+  }
+  async function adminFetch(path, init = {}) {
+    const headers = { "Content-Type": "application/json", ...(init.headers || {}) };
+    const pwd = $("localPwd").value;
+    if (pwd) headers.Authorization = `Bearer ${pwd}`;
+    const res = await fetch(localApi() + path, { ...init, headers });
+    if (!res.ok) throw new Error(`${init.method || "GET"} ${path} -> HTTP ${res.status} ${await res.text()}`);
+    return res.json();
+  }
+  let loadedFor = null;
+  async function loadNotebooks() {
+    if (loadedFor === localApi() + $("localPwd").value) return;
+    loadedFor = localApi() + $("localPwd").value;
+    status("Loading notebooks...");
+    try {
+      const nbs = await adminFetch("/api/notebooks?archived=false");
+      const prev = store.get("onw-demo-nb") || $("localNb").value;
+      $("localNb").innerHTML = nbs.length
+        ? nbs.map((n) => `<option value="${n.id}">${n.name.replace(/</g, "&lt;")} (${n.source_count} sources)</option>`).join("")
+        : '<option value="">(no notebooks)</option>';
+      if (nbs.some((n) => n.id === prev)) $("localNb").value = prev;
+      status(`${nbs.length} notebooks from ${localApi()}`);
+      await ensureKey();
+    } catch (e) {
+      loadedFor = null;
+      $("localNb").innerHTML = '<option value="">(unavailable)</option>';
+      status(`Cannot reach ${localApi()}: ${e.message}. Is \`make api\` running? Password needed?`, true);
+    }
+  }
+  async function ensureKey(force) {
+    const nb = $("localNb").value;
+    if (!nb) return;
+    store.set("onw-demo-nb", nb);
+    let key = force ? null : store.get(keyStore(nb));
+    if (!key) {
+      status("Creating widget key...");
+      try {
+        const created = await adminFetch(`/api/notebooks/${encodeURIComponent(nb)}/widget-keys`, {
+          method: "POST",
+          body: JSON.stringify({ name: "Widget demo (local)", allowed_origins: [], rate_limit_per_minute: 600, daily_limit: 0 }),
+        });
+        key = created.key;
+        store.set(keyStore(nb), key);
+        status(`Created widget key ${created.key_prefix}... for ${nb}`);
+      } catch (e) {
+        status(`Cannot create widget key: ${e.message}`, true);
+        return;
+      }
+    } else {
+      status(`Using stored widget key for ${nb}`);
+    }
+    $("localKey").value = key;
+    apply();
+  }
+  $("localNb").addEventListener("change", () => ensureKey());
+  $("newKey").addEventListener("click", () => ensureKey(true));
+  $("localUrl").addEventListener("change", loadNotebooks);
+  $("localPwd").addEventListener("change", loadNotebooks);
+
+  // ---------- apply ----------
   function apply() {
-    const mock = $("mode").value === "mock";
+    const mode = $("mode").value;
+    document.querySelectorAll(".panel .mock,.panel .local,.panel .custom").forEach((n) => (n.hidden = !n.classList.contains(mode)));
+    const conn = {
+      mock: { "api-url": location.origin, "widget-key": $("scenario").value, "notebook-id": "notebook:demo" },
+      local: { "api-url": localApi(), "widget-key": $("localKey").value, "notebook-id": $("localNb").value },
+      custom: { "api-url": $("url").value, "widget-key": $("key").value, "notebook-id": $("nb").value },
+    }[mode];
     const attrs = {
-      "api-url": mock ? location.origin : $("url").value,
-      "widget-key": mock ? $("scenario").value : $("key").value,
-      "notebook-id": mock ? "notebook:demo" : $("nb").value,
+      ...conn,
       theme: $("theme").value,
       lang: $("lang").value,
       "search-mode": $("sm").value,
@@ -80,11 +168,23 @@
     };
     for (const el of els) for (const [k, v] of Object.entries(attrs)) v ? el.setAttribute(k, v) : el.removeAttribute(k);
     document.body.classList.toggle("dark", attrs.theme === "dark" || (attrs.theme === "auto" && matchMedia("(prefers-color-scheme: dark)").matches));
+    if (mode === "local") loadNotebooks();
   }
-  document.querySelectorAll(".panel select,.panel input").forEach((i) => i.addEventListener("input", apply));
+  $("mode").addEventListener("change", () => store.set("onw-demo-mode", $("mode").value));
+  document.querySelectorAll(".panel select:not(#localNb),.panel input:not(#localUrl):not(#localPwd)").forEach((i) => i.addEventListener("input", apply));
+  const savedMode = store.get("onw-demo-mode");
+  if (savedMode) $("mode").value = savedMode;
   apply();
+
   for (const ev of ["onw-message", "onw-answer", "onw-error", "onw-open", "onw-close"])
     document.addEventListener(ev, (e) => console.log(ev, e.detail));
+  // a stored key that was deleted/rotated in the app: drop it so "New key" (or reselecting) recreates one
+  document.addEventListener("onw-error", (e) => {
+    if ($("mode").value === "local" && e.detail?.status === 401) {
+      store.set(keyStore($("localNb").value), null);
+      status("Widget key rejected (deleted or rotated?). Click \"New key\".", true);
+    }
+  });
 </script>
 </body>
 </html>

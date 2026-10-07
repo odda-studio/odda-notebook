@@ -264,6 +264,12 @@ async def prepare_answer(widget_key: WidgetKey, body: WidgetChatRequest, origin:
     source_ids = await _notebook_source_ids(str(widget_key.notebook))
     history = [{"role": h.role, "content": h.content} for h in body.history]
     query = _retrieval_query(history, body.message)
+    logger.info(
+        f"Widget chat: key={widget_key.key_prefix} notebook={widget_key.notebook} "
+        f"origin={origin} mode={body.search_mode} lang={body.language} "
+        f"history={len(history)} sources={len(source_ids)} message={body.message!r}"
+    )
+    logger.debug(f"Widget chat: retrieval query={query!r}")
 
     mode = body.search_mode
     options: Dict = {"max_passages": 8}
@@ -278,11 +284,16 @@ async def prepare_answer(widget_key: WidgetKey, body: WidgetChatRequest, origin:
     else:
         options.update(full_source_ids=source_ids, max_passages=10)
 
+    started = time.monotonic()
     context, passages = await build_retrieval_context(
         str(widget_key.notebook),
         query,
         note_ids=[],  # research notes are private: never exposed to visitors
         **options,
+    )
+    logger.info(
+        f"Widget chat: retrieval {time.monotonic() - started:.2f}s, "
+        f"{passages} passages, options={ {k: (len(v) if isinstance(v, list) else v) for k, v in options.items()} }"
     )
 
     system_prompt = Prompter(prompt_template="widget/system").render(
@@ -304,6 +315,10 @@ async def prepare_answer(widget_key: WidgetKey, body: WidgetChatRequest, origin:
     except ConfigurationError:
         logger.warning("Widget chat: no chat model configured")
         raise HTTPException(503, "The assistant is not available right now", headers)
+    logger.info(
+        f"Widget chat: model={getattr(model, 'model_name', None) or getattr(model, 'model', None) or type(model).__name__} "
+        f"messages={len(messages)} system_prompt={len(system_prompt)} chars"
+    )
     return PreparedAnswer(messages=messages, model=model, passages=passages)
 
 
@@ -313,15 +328,26 @@ def _sse(payload: Dict) -> str:
 
 async def stream_answer(prepared: PreparedAnswer) -> AsyncIterator[str]:
     stripper = ThinkStripper()
+    started = time.monotonic()
+    sent = 0
+    chars = 0
     try:
         async for chunk in prepared.model.astream(prepared.messages):  # type: ignore[attr-defined]
             text = stripper.feed(extract_text_content(chunk.content))
             if text:
+                sent += 1
+                chars += len(text)
                 yield _sse({"type": "token", "text": text})
         tail = stripper.flush()
         if tail:
+            sent += 1
+            chars += len(tail)
             yield _sse({"type": "token", "text": tail})
         yield _sse({"type": "done"})
+        logger.info(
+            f"Widget chat: stream done in {time.monotonic() - started:.2f}s, "
+            f"{sent} SSE tokens, {chars} chars"
+        )
     except Exception as e:
         # Details stay in the server log; the visitor gets a safe message
         logger.error(f"Widget chat stream failed: {type(e).__name__}: {e}")

@@ -75,6 +75,7 @@ Normative rules for working on the Python backend. Architecture and design ratio
 | `OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB` | Upload cap (default 100) |
 | `LANGGRAPH_CHECKPOINT_FILE` | Chat history SQLite path |
 | `CORS_ORIGINS` | Restrict before production |
+| `OPEN_NOTEBOOK_AI_DEBUG` | Dev only: log every LLM call (prompt, streamed tokens, output, usage) via `open_notebook/ai/debug_log.py` |
 
 ## Deep dives
 

@@ -8,6 +8,8 @@ from open_notebook.utils.proxy import ensure_internal_no_proxy
 
 ensure_internal_no_proxy()
 
+from open_notebook.ai import debug_log  # noqa: F401,E402  (OPEN_NOTEBOOK_AI_DEBUG hook)
+
 from .embedding_commands import (
     embed_insight_command,
     embed_note_command,

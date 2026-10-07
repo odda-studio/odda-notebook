@@ -52,6 +52,7 @@ from api.routers import (
 )
 from api.routers import commands as commands_router
 from api.widget_cors import WidgetCORSMiddleware
+from open_notebook.ai import debug_log  # noqa: F401  (OPEN_NOTEBOOK_AI_DEBUG hook)
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
