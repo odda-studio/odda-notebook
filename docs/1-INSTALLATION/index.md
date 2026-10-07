@@ -14,6 +14,14 @@ Choose your installation route based on your setup and use case.
 
 ---
 
+### 🌐 I want to deploy this fork on my own server
+**→ [Self-host on Your Own Server](self-host-server.md)** - Builds this repo's image, HTTPS via Caddy
+- ✅ Includes the fork's features (cloud sync, website widget)
+- ✅ Automatic Let's Encrypt certificates
+- ⚠️ Requires a Linux server and a domain
+
+---
+
 ### 🏠 I want everything in one container (Deprecated)
 **→ [Single Container](single-container.md)** - Deprecated, will be removed in v2
 - ⚠️ **Deprecated** — please use Docker Compose instead

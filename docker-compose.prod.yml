@@ -1,0 +1,61 @@
+# Production deployment of this fork on your own server.
+#
+# Unlike docker-compose.yml (which pulls the upstream lfnovo/open_notebook
+# image), this builds the image from this repository so the fork's features
+# (cloud sync, website widget, …) are included. Caddy terminates HTTPS with
+# automatic Let's Encrypt certificates and is the only service published on
+# the host.
+#
+#   cp .env.production.example .env   # then fill it in
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# See docs/1-INSTALLATION/self-host-server.md.
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    # List (exec) form so each interpolated value stays a single argument.
+    command: ["start", "--log", "info", "--user", "${SURREAL_USER:?set SURREAL_USER in .env}", "--pass", "${SURREAL_PASSWORD:?set SURREAL_PASSWORD in .env}", "rocksdb:/mydata/mydatabase.db"]
+    user: root  # Required for bind mounts on Linux
+    # No ports: reachable only from the internal compose network.
+    volumes:
+      - ./surreal_data:/mydata
+    restart: unless-stopped
+
+  open_notebook:
+    build:
+      context: .
+      target: runtime
+    image: odda-notebook:local
+    env_file: .env
+    environment:
+      # Always point at the compose service, whatever .env says.
+      - SURREAL_URL=ws://surrealdb:8000/rpc
+    # No ports: Caddy reaches the frontend (8502) over the internal network,
+    # and Next.js forwards /api/* to the API (5055) inside the container.
+    volumes:
+      - ./notebook_data:/app/data
+    depends_on:
+      - surrealdb
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+      - ACME_EMAIL=${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - open_notebook
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

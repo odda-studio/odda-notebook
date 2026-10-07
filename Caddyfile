@@ -1,0 +1,25 @@
+# Reverse proxy for docker-compose.prod.yml.
+# DOMAIN and ACME_EMAIL come from .env (passed to the caddy service).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Keep in line with OPEN_NOTEBOOK_MAX_UPLOAD_SIZE_MB (default 100).
+	request_body {
+		max_size 110MB
+	}
+
+	reverse_proxy open_notebook:8502 {
+		# Stream chat / widget answers (Server-Sent Events) without buffering.
+		flush_interval -1
+		# Long-running operations (transformations, podcasts).
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+}
